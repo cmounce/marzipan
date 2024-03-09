@@ -1,4 +1,10 @@
 use byteorder::{ByteOrder, LittleEndian};
+use nom::{
+    bytes::complete::take,
+    number::complete::{le_i16, le_u8},
+    sequence::tuple,
+    IResult,
+};
 use std::{env, error::Error, fs, process::exit};
 
 struct World {
@@ -14,7 +20,20 @@ struct Board {
 }
 
 struct Stat {
-    info: Vec<u8>,
+    x: u8,
+    y: u8,
+    x_step: i16,
+    y_step: i16,
+    cycle: i16,
+    p1: u8,
+    p2: u8,
+    p3: u8,
+    follower: i16,
+    leader: i16,
+    under_element: u8,
+    under_color: u8,
+    instruction_pointer: i16,
+    bind_index: i16,
     code: Vec<u8>,
 }
 
@@ -74,18 +93,10 @@ impl Board {
             u16::from_le_bytes((&bytes[offset..offset + 2]).try_into().unwrap()) as usize + 1;
         offset += 2;
         let mut stats = Vec::with_capacity(num_stats);
+        let mut input = &bytes[offset..];
         for _ in 0..num_stats {
-            let mut stat = Stat {
-                info: Vec::from(&bytes[offset..offset + 25]),
-                code: vec![],
-            };
-            offset += 25 + 8;
-            let code_len = i16::from_le_bytes((&stat.info[23..25]).try_into().unwrap());
-            if code_len > 0 {
-                let code_len = code_len as usize;
-                stat.code = Vec::from(&bytes[offset..offset + code_len]);
-                offset += code_len;
-            }
+            let (next_input, stat) = Stat::parse(input).map_err(|e| e.to_owned())?;
+            input = next_input;
             stats.push(stat);
         }
         Ok(Board {
@@ -94,6 +105,39 @@ impl Board {
             info,
             stats,
         })
+    }
+}
+
+impl Stat {
+    fn parse(input: &[u8]) -> IResult<&[u8], Self> {
+        let (input, (x, y, x_step, y_step)) = tuple((le_u8, le_u8, le_i16, le_i16))(input)?;
+        let (input, (cycle, p1, p2, p3)) = tuple((le_i16, le_u8, le_u8, le_u8))(input)?;
+        let (input, (follower, leader)) = tuple((le_i16, le_i16))(input)?;
+        let (input, (under_element, under_color)) = tuple((le_u8, le_u8))(input)?;
+        let (input, _) = take(4usize)(input)?;
+        let (input, (instruction_pointer, length)) = tuple((le_i16, le_i16))(input)?;
+        let (input, _) = take(8usize)(input)?;
+        let (input, code) = take(0.max(length) as usize)(input)?;
+        Ok((
+            input,
+            Stat {
+                x,
+                y,
+                x_step,
+                y_step,
+                follower,
+                leader,
+                cycle,
+                p1,
+                p2,
+                p3,
+                under_element,
+                under_color,
+                instruction_pointer,
+                bind_index: 0.min(length),
+                code: Vec::from(code),
+            },
+        ))
     }
 }
 
@@ -111,11 +155,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     let bytes = fs::read(&args[1])?;
     let world = World::from(&bytes)?;
 
+    // Print some of the data parsed.
+    // TODO: Implement some macros, or other code modification
+    // Then, we can try writing a copy to disk.
     println!("num boards: {}", &world.boards.len());
     for board in &world.boards {
         println!("board: {}", to_latin1(&board.name));
         for stat in &board.stats {
-            let (x, y) = (stat.info[0] as usize, stat.info[1] as usize);
+            let (x, y) = (stat.x as usize, stat.y as usize);
             println!(
                 "  stat at ({}, {}): {:?}, {:?}",
                 x,
