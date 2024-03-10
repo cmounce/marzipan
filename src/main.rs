@@ -1,4 +1,3 @@
-use byteorder::{ByteOrder, LittleEndian};
 use nom::{
     bytes::complete::take,
     number::complete::{le_i16, le_u8},
@@ -43,8 +42,7 @@ impl World {
             header: Vec::from(&bytes[0..512]),
             boards: vec![],
         };
-        // TODO: Remove LittleEndian entirely?
-        let num_boards = 1 + LittleEndian::read_u16(&world.header[2..4]);
+        let num_boards = 1 + u16::from_le_bytes((&world.header[2..4]).try_into().unwrap());
         let mut offset = world.header.len();
         for _ in 0..num_boards {
             // Ideally, this wouldn't panic if we run out of bytes
