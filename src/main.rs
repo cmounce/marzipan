@@ -6,6 +6,37 @@ use nom::{
 };
 use std::{env, error::Error, fs, process::exit};
 
+trait SerializationHelpers {
+    fn push_i16(&mut self, value: i16);
+    fn push_u16(&mut self, value: u16);
+    fn push_string(&mut self, cap: u8, value: &[u8]) -> Result<(), &'static str>;
+    fn push_padding(&mut self, size: usize);
+}
+
+impl SerializationHelpers for Vec<u8> {
+    fn push_i16(&mut self, value: i16) {
+        self.extend(value.to_le_bytes());
+    }
+
+    fn push_u16(&mut self, value: u16) {
+        self.extend(value.to_le_bytes());
+    }
+
+    fn push_string(&mut self, cap: u8, value: &[u8]) -> Result<(), &'static str> {
+        if value.len() > cap as usize {
+            return Err("string too long");
+        }
+        self.push(value.len() as u8);
+        self.extend_from_slice(value);
+        self.push_padding(cap as usize - value.len());
+        Ok(())
+    }
+
+    fn push_padding(&mut self, size: usize) {
+        self.resize(self.len() + size, 0);
+    }
+}
+
 struct World {
     header: Vec<u8>,
     boards: Vec<Board>,
@@ -104,6 +135,43 @@ impl Board {
             stats,
         })
     }
+
+    fn to_bytes(&self) -> Result<Vec<u8>, &'static str> {
+        let mut result = vec![];
+        result.push_padding(2); // reserve space for board size
+        result.push_string(50, &self.name)?;
+
+        // Encode terrain
+        if self.terrain.len() != 1500 {
+            return Err("invalid number of tiles for board terrain");
+        }
+        let mut iter = self.terrain.iter().peekable();
+        while let Some(tile) = iter.next() {
+            let mut count = 1;
+            while count < 255 && iter.peek().map_or(false, |&next_tile| next_tile == tile) {
+                count += 1;
+                iter.next();
+            }
+            result.push(count);
+            result.extend_from_slice(tile);
+        }
+
+        // Board info
+        result.extend_from_slice(&self.info);
+
+        // Stats
+        // TODO: handle when there are no stats
+        result.push_i16((self.stats.len() - 1) as i16);
+        for stat in &self.stats {
+            result.extend_from_slice(&stat.to_bytes());
+        }
+
+        // Fix up board size
+        let size = (result.len() - 2) as u16;
+        result.splice(0..2, size.to_le_bytes());
+
+        Ok(result)
+    }
 }
 
 impl Stat {
@@ -136,6 +204,36 @@ impl Stat {
                 code: Vec::from(code),
             },
         ))
+    }
+
+    fn to_bytes(&self) -> Vec<u8> {
+        let mut result = vec![];
+        result.push(self.x);
+        result.push(self.y);
+        result.push_i16(self.x_step);
+        result.push_i16(self.y_step);
+        result.push_i16(self.cycle);
+        result.push(self.p1);
+        result.push(self.p2);
+        result.push(self.p3);
+        result.push_i16(self.follower);
+        result.push_i16(self.leader);
+        result.push(self.under_element);
+        result.push(self.under_color);
+        result.push_padding(4);
+        result.push_i16(self.instruction_pointer);
+        // TODO: more safety around valid bind-indexes (positive? negative?)
+        result.push_i16(if self.bind_index < 0 {
+            self.bind_index
+        } else {
+            self.code.len() as i16
+        });
+        result.push_padding(8);
+        if self.bind_index >= 0 {
+            // TODO: more safety around bind-index XOR code
+            result.extend_from_slice(&self.code);
+        }
+        result
     }
 }
 
@@ -170,5 +268,9 @@ fn main() -> Result<(), Box<dyn Error>> {
             );
         }
     }
+
+    // Try to export one of the boards
+    fs::write("tmp.brd", world.boards[0].to_bytes()?)?;
+
     Ok(())
 }
