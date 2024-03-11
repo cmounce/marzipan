@@ -87,6 +87,14 @@ impl World {
         }
         Ok(world)
     }
+
+    fn to_bytes(&self) -> Result<Vec<u8>, Box<dyn Error>> {
+        let mut result = self.header.clone();
+        for board in &self.boards {
+            result.extend_from_slice(&board.to_bytes()?);
+        }
+        Ok(result)
+    }
 }
 
 impl Board {
@@ -249,7 +257,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     let bytes = fs::read(&args[1])?;
-    let world = World::from(&bytes)?;
+    let mut world = World::from(&bytes)?;
 
     // Print some of the data parsed.
     // TODO: Implement some macros, or other code modification
@@ -269,8 +277,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    // Try to export one of the boards
-    fs::write("tmp.brd", world.boards[0].to_bytes()?)?;
+    // Try to write a modified world file
+    world.boards.reverse();
+    fs::write("tmp.zzt", world.to_bytes()?)?;
 
     Ok(())
 }
