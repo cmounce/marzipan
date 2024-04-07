@@ -37,6 +37,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // Try to write a modified world file
     world.boards.reverse();
+    world.starting_board = (world.boards.len() as i16 - 1) - world.starting_board;
     fs::write("tmp.zzt", world.to_bytes()?)?;
 
     Ok(())

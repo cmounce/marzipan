@@ -1,13 +1,13 @@
 use std::{error::Error, fmt::Display};
 
 use nom::{
-    bytes::complete::take,
+    bytes::complete::{tag, take},
     combinator::fail,
     error::{ErrorKind, ParseError},
     multi::count,
-    number::complete::{le_i16, le_u8},
+    number::complete::{le_i16, le_u16, le_u8},
     sequence::tuple,
-    Err, IResult,
+    Err, IResult, Parser,
 };
 
 #[derive(Debug)]
@@ -69,7 +69,20 @@ impl Error for LoadError {
 }
 
 pub struct World {
-    pub header: Vec<u8>,
+    pub ammo: i16,
+    pub gems: i16,
+    pub keys: [bool; 7],
+    pub health: i16,
+    pub starting_board: i16,
+    pub torches: i16,
+    pub torch_cycles: i16,
+    pub energizer_cycles: i16,
+    pub score: i16,
+    pub world_name: Vec<u8>,
+    pub flags: [Vec<u8>; 10],
+    pub time: i16,
+    pub time_ticks: i16,
+    pub locked: bool,
     pub boards: Vec<Board>,
 }
 
@@ -110,27 +123,71 @@ pub struct Stat {
 
 impl World {
     pub fn from_bytes(bytes: &[u8]) -> Result<World, LoadError> {
-        let mut world = World {
-            header: Vec::from(&bytes[0..512]),
-            boards: vec![],
-        };
-        let num_boards = 1 + u16::from_le_bytes((&world.header[2..4]).try_into().unwrap());
-        let mut offset = world.header.len();
-        for _ in 0..num_boards {
-            // Ideally, this wouldn't panic if we run out of bytes
-            let board_len =
-                u16::from_le_bytes((&bytes[offset..offset + 2]).try_into().unwrap()) as usize;
-            offset += 2;
-            world
-                .boards
-                .push(Board::from_bytes(&bytes[offset..offset + board_len])?);
-            offset += board_len;
-        }
-        Ok(world)
+        let (input, (_, num_boards)) = tuple((tag([0xff, 0xff]), le_i16)).parse(bytes)?;
+        let (input, (ammo, gems, keys)) =
+            tuple((le_i16, le_i16, count(bool_u8, 7))).parse(input)?;
+        let (input, (health, starting_board, torches, torch_cycles, energizer_cycles)) =
+            tuple((le_i16, le_i16, le_i16, le_i16, le_i16)).parse(input)?;
+        let (input, (_, score, world_name)) = tuple((take(2usize), le_i16, pstring(20)))(input)?;
+        let (input, flags) = count(pstring(20), 10).parse(input)?;
+        let (_input, (time, time_ticks, locked)) = tuple((le_i16, le_i16, bool_u8)).parse(input)?;
+
+        // Rest of header is padding; fast-forward starting from original input
+        let (input, _) = take(512usize).parse(bytes)?;
+
+        // Load boards
+        let num_boards = num_boards as usize + 1;
+        let (_input, chunks) = count(board_slice, num_boards).parse(input)?;
+        let boards: Result<Vec<Board>, LoadError> = chunks
+            .iter()
+            .map(|bytes: &&[u8]| Board::from_bytes(bytes))
+            .collect();
+        let boards = boards?;
+
+        Ok(World {
+            ammo,
+            gems,
+            keys: keys.try_into().unwrap(),
+            health,
+            starting_board,
+            torches,
+            torch_cycles,
+            energizer_cycles,
+            score,
+            world_name,
+            flags: flags.try_into().unwrap(),
+            time,
+            time_ticks,
+            locked,
+            boards,
+        })
     }
 
     pub fn to_bytes(&self) -> Result<Vec<u8>, Box<dyn Error>> {
-        let mut result = self.header.clone();
+        let mut result = Vec::with_capacity(512);
+        result.push_i16(-1); // file magic: ZZT world
+        result.push_i16(self.boards.len() as i16 - 1);
+        result.push_i16(self.ammo);
+        result.push_i16(self.gems);
+        for key in self.keys {
+            result.push_bool(key);
+        }
+        result.push_i16(self.health);
+        result.push_i16(self.starting_board);
+        result.push_i16(self.torches);
+        result.push_i16(self.torch_cycles);
+        result.push_i16(self.energizer_cycles);
+        result.push_padding(2);
+        result.push_i16(self.score);
+        result.push_string(20, &self.world_name)?;
+        for flag in &self.flags {
+            result.push_string(20, flag)?;
+        }
+        result.push_i16(self.time);
+        result.push_i16(self.time_ticks);
+        result.push_bool(self.locked);
+        result.push_padding(512 - result.len());
+
         for board in &self.boards {
             result.extend_from_slice(&board.to_bytes()?);
         }
@@ -140,8 +197,11 @@ impl World {
 
 impl Board {
     pub fn from_bytes(bytes: &[u8]) -> Result<Board, LoadError> {
+        // Ignore length bytes
+        let (input, _) = le_u16.parse(bytes)?;
+
         // Read board name
-        let (input, name) = pstring(50)(bytes)?;
+        let (input, name) = pstring(50)(input)?;
 
         // Read terrain
         const NUM_TILES: usize = 60 * 25;
@@ -324,6 +384,11 @@ fn pstring(cap: u8) -> impl Fn(&[u8]) -> IResult<&[u8], Vec<u8>, LoadError> {
         let (input, _) = take(cap - len)(input)?;
         Ok((input, data.to_vec()))
     }
+}
+
+fn board_slice(bytes: &[u8]) -> IResult<&[u8], &[u8], LoadError> {
+    let (_, size) = le_u16.parse(bytes)?;
+    take(size + 2).parse(bytes)
 }
 
 trait SerializationHelpers {
