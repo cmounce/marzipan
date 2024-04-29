@@ -1,7 +1,10 @@
+mod lang;
 mod world;
 
 use std::{env, error::Error, fs, process::exit};
 use world::World;
+
+use crate::lang::scan;
 
 fn to_latin1(bytes: &[u8]) -> String {
     bytes.iter().map(|&x| x as char).collect()
@@ -32,6 +35,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 board.terrain[(x - 1) + (y - 1) * 60],
                 to_latin1(&stat.code)
             );
+            scan("todo: convert [u8] to strings and scan here");
         }
     }
 
