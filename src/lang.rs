@@ -15,7 +15,7 @@
 
 use std::{
     iter::{Fuse, Peekable},
-    str::Chars,
+    str::CharIndices,
 };
 
 #[derive(Debug, Eq, PartialEq)]
@@ -27,22 +27,24 @@ pub enum Token {
     String(String),
 }
 
-pub fn scan(input: &str) -> Vec<Token> {
+pub fn scan(input: &str) -> (Vec<Token>, Vec<String>) {
     let mut scanner = Scanner::new(input);
     scanner.scan();
-    scanner.tokens
+    (scanner.tokens, scanner.errors)
 }
 
 struct Scanner<'a> {
-    text: Peekable<Fuse<Chars<'a>>>,
+    text: Peekable<Fuse<CharIndices<'a>>>,
     tokens: Vec<Token>,
+    errors: Vec<String>,
 }
 
 impl<'a> Scanner<'a> {
     fn new(input: &'a str) -> Self {
         Scanner {
-            text: input.chars().fuse().peekable(),
+            text: input.char_indices().fuse().peekable(),
             tokens: vec![],
+            errors: vec![],
         }
     }
 
@@ -77,7 +79,11 @@ impl<'a> Scanner<'a> {
                     self.identifier();
                 }
                 _ => {
-                    todo!("unused chars")
+                    if let Some((i, c)) = self.text.peek() {
+                        self.errors
+                            .push(format!("Unexpected character {} at offset {}", c, i));
+                    }
+                    self.advance();
                 }
             }
         }
@@ -103,7 +109,7 @@ impl<'a> Scanner<'a> {
             }
         }
         if !self.consume('"') {
-            todo!("Handle premature EOF")
+            self.errors.push("string not terminated".into());
         }
         self.tokens.push(Token::String(result));
     }
@@ -152,11 +158,11 @@ impl<'a> Scanner<'a> {
     }
 
     fn peek(&mut self) -> Option<char> {
-        self.text.peek().copied()
+        self.text.peek().map(|(_, c)| *c)
     }
 
     fn advance(&mut self) -> Option<char> {
-        self.text.next()
+        self.text.next().map(|(_, c)| c)
     }
 
     fn consume(&mut self, c: char) -> bool {
@@ -186,6 +192,10 @@ mod tests {
     token_helper!(identifier, Identifier);
     token_helper!(raw_text, RawText);
     token_helper!(string, String);
+
+    fn scan(input: &str) -> Vec<Token> {
+        super::scan(input).0
+    }
 
     #[test]
     fn scan_empty() {
@@ -269,12 +279,17 @@ mod tests {
         );
     }
 
-    #[ignore = "not implemented yet"]
     #[test]
     fn scan_premature_end_of_string() {
-        assert_eq!(
-            vec![Percent, identifier("foo"), string("bar")],
-            scan("%foo \"bar")
-        );
+        let (tokens, errors) = super::scan("%foo \"bar");
+        assert_eq!(vec![Percent, identifier("foo"), string("bar")], tokens);
+        assert!(errors.len() == 1);
+    }
+
+    #[test]
+    fn scan_unexpected_chars() {
+        let (tokens, errors) = super::scan("%foo @bar");
+        assert_eq!(vec![Percent, identifier("foo"), identifier("bar")], tokens);
+        assert!(errors.len() == 1);
     }
 }
