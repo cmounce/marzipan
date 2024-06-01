@@ -1,10 +1,10 @@
-mod lang;
+mod preprocess;
 mod world;
 
 use std::{env, error::Error, fs, process::exit};
 use world::World;
 
-use crate::lang::scan;
+use crate::preprocess::scan::scan;
 
 fn to_latin1(bytes: &[u8]) -> String {
     bytes.iter().map(|&x| x as char).collect()

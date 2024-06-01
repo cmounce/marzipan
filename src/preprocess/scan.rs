@@ -208,6 +208,14 @@ mod tests {
     }
 
     #[test]
+    fn scan_raw_multiline() {
+        assert_eq!(
+            vec![raw_text("foo"), Newline, raw_text("bar")],
+            scan("foo\nbar")
+        );
+    }
+
+    #[test]
     fn scan_mixed() {
         assert_eq!(
             vec![
