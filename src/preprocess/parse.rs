@@ -76,7 +76,7 @@ impl Parser {
                     args.push(Box::new(Expr::String(val)));
                 }
                 Token::Newline => {
-                    self.advance();
+                    //self.advance();
                     break;
                 }
                 _ => return Err(anyhow!("Unexpected token {:?}", token)),
@@ -163,7 +163,7 @@ mod tests {
                 [],
             ),
             ZztOop(
-                "Baz.",
+                "\nBaz.",
             ),
         ]
         "###)
