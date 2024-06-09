@@ -2,10 +2,11 @@ mod encoding;
 mod preprocess;
 mod world;
 
-use std::{env, error::Error, fs, process::exit};
+use anyhow::anyhow;
+use encoding::{decode_multiline, encode_multiline};
+use preprocess::eval::Context;
+use std::{env, error::Error, fs, path::PathBuf, process::exit};
 use world::World;
-
-use crate::preprocess::scan::scan;
 
 fn to_latin1(bytes: &[u8]) -> String {
     bytes.iter().map(|&x| x as char).collect()
@@ -18,16 +19,20 @@ fn main() -> Result<(), Box<dyn Error>> {
         exit(1);
     }
 
-    let bytes = fs::read(&args[1])?;
+    let world_filename = &args[1];
+    let bytes = fs::read(world_filename)?;
     let mut world = World::from_bytes(&bytes)?;
 
-    // Print some of the data parsed.
-    // TODO: Implement some macros, or other code modification
-    // Then, we can try writing a copy to disk.
+    // Prepare to evaluate macros from the world file's directory
+    let world_pathbuf = PathBuf::from(&world_filename);
+    let world_dir = world_pathbuf.parent().ok_or(anyhow!("Couldn't get world's directory"))?;
+    let eval_context = Context::new(&world_dir);
+
     println!("num boards: {}", &world.boards.len());
-    for board in &world.boards {
+    for board in &mut world.boards {
         println!("board: {}", to_latin1(&board.name));
-        for stat in &board.stats {
+        for stat in &mut board.stats {
+            // Print some of the data parsed.
             let (x, y) = (stat.x as usize, stat.y as usize);
             println!(
                 "  stat at ({}, {}): {:?}, {:?}",
@@ -36,13 +41,15 @@ fn main() -> Result<(), Box<dyn Error>> {
                 board.terrain[(x - 1) + (y - 1) * 60],
                 to_latin1(&stat.code)
             );
-            scan("todo: convert [u8] to strings and scan here");
+
+            // Evaluate macros
+            let old_code = decode_multiline(&stat.code);
+            let new_code = eval_context.eval_program(&old_code)?;
+            stat.code = encode_multiline(&new_code)?;
         }
     }
 
     // Try to write a modified world file
-    world.boards.reverse();
-    world.starting_board = (world.boards.len() as i16 - 1) - world.starting_board;
     fs::write("tmp.zzt", world.to_bytes()?)?;
 
     Ok(())

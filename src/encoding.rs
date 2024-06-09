@@ -2,7 +2,7 @@ use anyhow::{anyhow, Result};
 use codepage_437::CP437_WINGDINGS;
 
 // Serialize multi-line content with CR-terminated lines
-fn encode_multiline(input: &str) -> Result<Vec<u8>> {
+pub fn encode_multiline(input: &str) -> Result<Vec<u8>> {
     input
         .chars()
         .map(|c| {
@@ -17,7 +17,7 @@ fn encode_multiline(input: &str) -> Result<Vec<u8>> {
         .collect()
 }
 
-fn decode_multiline(input: &[u8]) -> String {
+pub fn decode_multiline(input: &[u8]) -> String {
     input
         .iter()
         .map(|&x| {

@@ -1,4 +1,4 @@
-use std::{fs, path::Path};
+use std::{fs, path::{Path, PathBuf}};
 
 use anyhow::{anyhow, bail, Result};
 
@@ -15,14 +15,19 @@ trait FileLoaderTrait {
     fn load(&self, path: &Path) -> Result<String>;
 }
 
-struct FileLoader;
+struct FileLoader {
+    working_dir: PathBuf,
+}
 struct MockFileLoader {
     content: String,
 }
 
 impl FileLoaderTrait for FileLoader {
     fn load(&self, path: &Path) -> Result<String> {
-        fs::read_to_string(path).map_err(|e| anyhow!("Couldn't load file: {}", e))
+        // let mut full_path = self.working_dir.clone();
+        // full_path.extend(path);
+        let full_path = self.working_dir.join(path);
+        fs::read_to_string(full_path).map_err(|e| anyhow!("Couldn't load {:?}: {}", path, e))
     }
 }
 
@@ -33,6 +38,14 @@ impl FileLoaderTrait for MockFileLoader {
 }
 
 impl Context {
+    pub fn new(working_directory: &Path) -> Self {
+        Context {
+            file_loader: Box::new(FileLoader {
+                working_dir: working_directory.into()
+            }),
+        }
+    }
+
     pub fn eval_program(&self, input: &str) -> Result<String> {
         let tokens = scan(input).0;
         let exprs = parse(tokens)?;

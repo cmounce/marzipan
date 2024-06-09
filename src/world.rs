@@ -394,7 +394,6 @@ fn board_slice(bytes: &[u8]) -> IResult<&[u8], &[u8], LoadError> {
 trait SerializationHelpers {
     fn push_bool(&mut self, value: bool);
     fn push_i16(&mut self, value: i16);
-    fn push_u16(&mut self, value: u16);
     fn push_string(&mut self, cap: u8, value: &[u8]) -> Result<(), &'static str>;
     fn push_padding(&mut self, size: usize);
 }
@@ -405,10 +404,6 @@ impl SerializationHelpers for Vec<u8> {
     }
 
     fn push_i16(&mut self, value: i16) {
-        self.extend(value.to_le_bytes());
-    }
-
-    fn push_u16(&mut self, value: u16) {
         self.extend(value.to_le_bytes());
     }
 
