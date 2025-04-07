@@ -1,13 +1,13 @@
 use std::{error::Error, fmt::Display};
 
 use nom::{
+    Err, IResult, Parser,
     bytes::complete::{tag, take},
     combinator::fail,
     error::{ErrorKind, ParseError},
     multi::count,
-    number::complete::{le_i16, le_u16, le_u8},
+    number::complete::{le_i16, le_u8, le_u16},
     sequence::tuple,
-    Err, IResult, Parser,
 };
 
 #[derive(Debug)]

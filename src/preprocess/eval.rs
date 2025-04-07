@@ -1,9 +1,12 @@
-use std::{fs, path::{Path, PathBuf}};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 
 use super::{
-    parse::{parse, Expr},
+    parse::{Expr, parse},
     scan::scan,
 };
 
@@ -41,7 +44,7 @@ impl Context {
     pub fn new(working_directory: &Path) -> Self {
         Context {
             file_loader: Box::new(FileLoader {
-                working_dir: working_directory.into()
+                working_dir: working_directory.into(),
             }),
         }
     }

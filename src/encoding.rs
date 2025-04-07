@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use codepage_437::CP437_WINGDINGS;
 
 // Serialize multi-line content with CR-terminated lines

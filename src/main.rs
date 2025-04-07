@@ -25,7 +25,9 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // Prepare to evaluate macros from the world file's directory
     let world_pathbuf = PathBuf::from(&world_filename);
-    let world_dir = world_pathbuf.parent().ok_or(anyhow!("Couldn't get world's directory"))?;
+    let world_dir = world_pathbuf
+        .parent()
+        .ok_or(anyhow!("Couldn't get world's directory"))?;
     let eval_context = Context::new(&world_dir);
 
     println!("num boards: {}", &world.boards.len());
