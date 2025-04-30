@@ -1,4 +1,5 @@
 mod encoding;
+mod labels;
 mod preprocess;
 mod world;
 
