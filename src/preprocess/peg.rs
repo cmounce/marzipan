@@ -81,6 +81,97 @@ impl Parser {
     }
 }
 
+trait Rule {
+    fn parse(&self, p: &mut Parser) -> Result<()>;
+}
+
+struct Ref<T>(T);
+
+impl<T> Rule for Ref<&T>
+where
+    T: Rule,
+{
+    fn parse(&self, p: &mut Parser) -> Result<()> {
+        self.0.parse(p)
+    }
+}
+
+impl<R, F> Rule for F
+where
+    R: Rule,
+    F: Fn() -> R,
+{
+    fn parse(&self, p: &mut Parser) -> Result<()> {
+        self().parse(p)
+    }
+}
+
+impl Rule for &str {
+    fn parse(&self, p: &mut Parser) -> Result<()> {
+        if p.input[p.offset..].starts_with(self) {
+            p.offset += self.len();
+            Ok(())
+        } else {
+            bail!("No match")
+        }
+    }
+}
+
+macro_rules! impl_rule_for_tuple {
+    ($($x:ident)+) => {
+        impl<$($x),+> Rule for ($($x),+,) where $($x: Rule),+, {
+            fn parse(&self, p: &mut Parser) -> Result<()> {
+                let save = p.save();
+                let mut lambda = || {
+                    #[allow(non_snake_case)]
+                    let ($($x),+,) = self;
+                    $($x.parse(p)?;)+
+                    Ok(())
+                };
+                match lambda() {
+                    Ok(x) => Ok(x),
+                    Err(e) => {
+                        p.restore(save);
+                        Err(e)
+                    }
+                }
+            }
+        }
+    };
+}
+
+struct Alt<T>(T);
+
+macro_rules! impl_rule_for_alt {
+    ($($x:ident)+) => {
+        impl<$($x),+> Rule for Alt<($($x),+,)> where $($x: Rule),+ {
+            fn parse(&self, p: &mut Parser) -> Result<()> {
+                let save = p.save();
+                #[allow(non_snake_case)]
+                let ($($x),+,) = &self.0;
+                $(
+                    if $x.parse(p).is_ok() {
+                        return Ok(())
+                    }
+                    p.restore(save);
+                )+
+                bail!("No match")
+            }
+        }
+    };
+}
+
+macro_rules! impl_rule_for_many {
+    () => {};
+    ($head:ident $($tail:ident)*) => {
+        impl_rule_for_alt!($head $($tail)*);
+        impl_rule_for_tuple!($head $($tail)*);
+        impl_rule_for_many!($($tail)*);
+    }
+}
+
+impl_rule_for_many!(A B C D E F G H I J);
+
 mod test {
     use super::*;
 
@@ -89,5 +180,30 @@ mod test {
         let mut p = Parser::new("foo");
         p.literal("f").unwrap();
         p.star(|p| p.literal("o")).unwrap();
+    }
+
+    #[test]
+    fn test_combinator_tuples() {
+        let foo = ("f", "o", "o");
+        let bar = "bar";
+        let rule = (foo, " ", bar);
+        let mut p = Parser::new("foo bar");
+        rule.parse(&mut p).unwrap();
+    }
+
+    #[test]
+    fn test_combinator_fn_wrapper() {
+        let foo = || "foo";
+        let bar = (foo, " ", foo);
+        let mut p = Parser::new("foo foo");
+        bar.parse(&mut p).unwrap();
+    }
+
+    #[test]
+    fn test_combinator_alt() {
+        let item = Alt(("foo", "bar", "baz"));
+        let rule = (Ref(&item), ", ", Ref(&item));
+        let mut p = Parser::new("foo, bar");
+        rule.parse(&mut p).unwrap()
     }
 }
