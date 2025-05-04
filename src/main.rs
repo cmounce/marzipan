@@ -37,11 +37,17 @@ fn main() -> Result<(), Box<dyn Error>> {
         for stat in &mut board.stats {
             // Print some of the data parsed.
             let (x, y) = (stat.x as usize, stat.y as usize);
+            let terrain = if x < 1 || x > 60 || y < 1 || y > 25 {
+                None
+            } else {
+                let terrain_index = (x - 1) + (y - 1) * 60;
+                Some(board.terrain[terrain_index])
+            };
             println!(
                 "  stat at ({}, {}): {:?}, {:?}",
                 x,
                 y,
-                board.terrain[(x - 1) + (y - 1) * 60],
+                terrain,
                 to_latin1(&stat.code)
             );
 
