@@ -4,14 +4,9 @@ mod preprocess;
 mod world;
 
 use anyhow::anyhow;
-use encoding::{decode_multiline, encode_multiline};
 use preprocess::eval::Context;
 use std::{env, error::Error, fs, path::PathBuf, process::exit};
 use world::World;
-
-fn to_latin1(bytes: &[u8]) -> String {
-    bytes.iter().map(|&x| x as char).collect()
-}
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = env::args().collect();
@@ -33,7 +28,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     println!("num boards: {}", &world.boards.len());
     for board in &mut world.boards {
-        println!("board: {}", to_latin1(&board.name));
+        println!("board: {}", board.name);
         for stat in &mut board.stats {
             // Print some of the data parsed.
             let (x, y) = (stat.x as usize, stat.y as usize);
@@ -43,19 +38,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                 let terrain_index = (x - 1) + (y - 1) * 60;
                 Some(board.terrain[terrain_index])
             };
-            println!(
-                "  stat at ({}, {}): {:?}, {:?}",
-                x,
-                y,
-                terrain,
-                to_latin1(&stat.code)
-            );
+            println!("  stat at ({}, {}): {:?}, {:?}", x, y, terrain, stat.code);
 
             // Evaluate macros
-            let old_code = decode_multiline(&stat.code);
-            let new_code = eval_context.eval_program(&old_code)?;
-            stat.code = encode_multiline(&new_code)?;
+            stat.code = eval_context.eval_program(&stat.code)?;
         }
+        board.name.push_str(" (♪)");
     }
 
     // Try to write a modified world file

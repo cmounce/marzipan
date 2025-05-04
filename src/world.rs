@@ -10,6 +10,8 @@ use nom::{
     sequence::tuple,
 };
 
+use crate::encoding::{decode_multiline, decode_oneline, encode_multiline, encode_oneline};
+
 #[derive(Debug)]
 pub struct LoadError {
     message: String,
@@ -87,7 +89,7 @@ pub struct World {
 }
 
 pub struct Board {
-    pub name: Vec<u8>,
+    pub name: String,
     pub terrain: Vec<[u8; 2]>,
     pub max_shots: u8,
     pub is_dark: bool,
@@ -118,7 +120,7 @@ pub struct Stat {
     pub under_color: u8,
     pub instruction_pointer: i16,
     pub bind_index: i16,
-    pub code: Vec<u8>,
+    pub code: String,
 }
 
 impl World {
@@ -201,7 +203,8 @@ impl Board {
         let (input, _) = le_u16.parse(bytes)?;
 
         // Read board name
-        let (input, name) = pstring(50)(input)?;
+        let (input, name_bytes) = pstring(50)(input)?;
+        let name = decode_oneline(&name_bytes);
 
         // Read terrain
         const NUM_TILES: usize = 60 * 25;
@@ -256,7 +259,8 @@ impl Board {
     pub fn to_bytes(&self) -> Result<Vec<u8>, &'static str> {
         let mut result = vec![];
         result.push_padding(2); // reserve space for board size
-        result.push_string(50, &self.name)?;
+        let name_bytes = encode_oneline(&self.name).unwrap();
+        result.push_string(50, &name_bytes)?;
 
         // Encode terrain
         if self.terrain.len() != 1500 {
@@ -315,7 +319,8 @@ impl Stat {
         let (input, _) = take(4usize)(input)?;
         let (input, (instruction_pointer, length)) = tuple((le_i16, le_i16))(input)?;
         let (input, _) = take(8usize)(input)?;
-        let (input, code) = take(0.max(length) as usize)(input)?;
+        let (input, code_bytes) = take(0.max(length) as usize)(input)?;
+        let code = decode_multiline(&code_bytes);
         Ok((
             input,
             Stat {
@@ -333,7 +338,7 @@ impl Stat {
                 under_color,
                 instruction_pointer,
                 bind_index: 0.min(length),
-                code: Vec::from(code),
+                code,
             },
         ))
     }
@@ -363,7 +368,8 @@ impl Stat {
         result.push_padding(8);
         if self.bind_index >= 0 {
             // TODO: more safety around bind-index XOR code
-            result.extend_from_slice(&self.code);
+            let code_bytes = encode_multiline(&self.code).unwrap();
+            result.extend_from_slice(&code_bytes);
         }
         result
     }
