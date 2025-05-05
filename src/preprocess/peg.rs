@@ -161,6 +161,37 @@ macro_rules! impl_rule_for_alt {
     };
 }
 
+struct Star<T>(T);
+
+impl<T> Rule for Star<T>
+where
+    T: Rule,
+{
+    fn parse(&self, p: &mut Parser) -> Result<()> {
+        while self.0.parse(p).is_ok() {}
+        Ok(())
+    }
+}
+
+macro_rules! star {
+    ($($item:tt),+ $(,)?) => {
+        Star((
+            $($item),+,
+        ))
+    };
+}
+
+pub struct EOF;
+
+impl Rule for EOF {
+    fn parse(&self, p: &mut Parser) -> Result<()> {
+        if p.offset < p.input.len() {
+            bail!("No match");
+        }
+        Ok(())
+    }
+}
+
 macro_rules! impl_rule_for_many {
     () => {};
     ($head:ident $($tail:ident)*) => {
@@ -174,6 +205,12 @@ impl_rule_for_many!(A B C D E F G H I J);
 
 mod test {
     use super::*;
+
+    fn parse<T: Rule>(rule: &T, input: &str) -> Result<()> {
+        let mut p = Parser::new(input);
+        let rule = (Ref(rule), EOF);
+        rule.parse(&mut p)
+    }
 
     #[test]
     fn test_hello() {
@@ -200,10 +237,22 @@ mod test {
     }
 
     #[test]
-    fn test_combinator_alt() {
+    fn test_combinator_alt() -> Result<()> {
         let item = Alt(("foo", "bar", "baz"));
         let rule = (Ref(&item), ", ", Ref(&item));
-        let mut p = Parser::new("foo, bar");
-        rule.parse(&mut p).unwrap()
+        parse(&rule, "foo, bar")?;
+        parse(&rule, "bar, baz")?;
+        parse(&rule, "baz, foo")?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_combinator_star() -> Result<()> {
+        let item = "foo";
+        let csv = (item, star!(", ", item));
+        parse(&csv, "foo")?;
+        parse(&csv, "foo, foo")?;
+        parse(&csv, "foo, foo, foo")?;
+        Ok(())
     }
 }
