@@ -1,14 +1,12 @@
-use super::super::preprocess::peg::Parser;
-use anyhow::Result;
+use crate::{
+    preprocess::peg::{EOF, Rule, Star},
+    star,
+};
 
-fn parse_program(p: &mut Parser) -> Result<()> {
-    p.star(|p| parse_line(p))?;
-    p.eof()?;
-    Ok(())
+fn parse_program() -> impl Rule {
+    (star!(parse_line), EOF)
 }
 
-fn parse_line(p: &mut Parser) -> Result<()> {
-    p.star(|p| p.char(|c| c != '\n'))?;
-    p.literal("\n")?;
-    Ok(())
+fn parse_line() -> impl Rule {
+    (star!("foo"), "\n")
 }

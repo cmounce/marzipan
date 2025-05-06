@@ -37,51 +37,9 @@ impl Parser {
         self.offset = sp.offset;
         self.output.truncate(sp.num_tags);
     }
-
-    pub fn eof(&mut self) -> Result<()> {
-        if self.input.len() == self.offset {
-            Ok(())
-        } else {
-            bail!("No match")
-        }
-    }
-
-    pub fn literal(&mut self, str: &str) -> Result<()> {
-        if self.input[self.offset..].starts_with(str) {
-            self.offset += str.len();
-            Ok(())
-        } else {
-            bail!("No match")
-        }
-    }
-
-    pub fn char<F>(&mut self, f: F) -> Result<()>
-    where
-        F: Fn(char) -> bool,
-    {
-        if let Some(c) = self.input[self.offset..].chars().next() {
-            if f(c) {
-                self.offset += c.len_utf8();
-                return Ok(());
-            }
-        }
-        bail!("No match")
-    }
-
-    pub fn star<F>(&mut self, mut f: F) -> Result<()>
-    where
-        F: FnMut(&mut Self) -> Result<()>,
-    {
-        let mut sp = self.save();
-        while let Ok(_) = f(self) {
-            sp = self.save();
-        }
-        self.restore(sp);
-        Ok(())
-    }
 }
 
-trait Rule {
+pub trait Rule {
     fn parse(&self, p: &mut Parser) -> Result<()>;
 }
 
@@ -161,7 +119,7 @@ macro_rules! impl_rule_for_alt {
     };
 }
 
-struct Star<T>(T);
+pub struct Star<T>(pub T);
 
 impl<T> Rule for Star<T>
 where
@@ -173,6 +131,7 @@ where
     }
 }
 
+#[macro_export]
 macro_rules! star {
     ($($item:tt),+ $(,)?) => {
         Star((
@@ -210,13 +169,6 @@ mod test {
         let mut p = Parser::new(input);
         let rule = (Ref(rule), EOF);
         rule.parse(&mut p)
-    }
-
-    #[test]
-    fn test_hello() {
-        let mut p = Parser::new("foo");
-        p.literal("f").unwrap();
-        p.star(|p| p.literal("o")).unwrap();
     }
 
     #[test]
