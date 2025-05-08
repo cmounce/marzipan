@@ -1,3 +1,5 @@
+use std::ops::RangeInclusive;
+
 use anyhow::{Result, anyhow, bail};
 
 // TODO: Add offsets
@@ -75,6 +77,18 @@ impl Rule for &str {
     }
 }
 
+impl Rule for RangeInclusive<char> {
+    fn parse(&self, p: &mut Parser) -> Result<()> {
+        if let Some(c) = p.input[p.offset..].chars().next() {
+            if self.contains(&c) {
+                p.offset += c.len_utf8();
+                return Ok(());
+            }
+        }
+        bail!("No match")
+    }
+}
+
 macro_rules! impl_rule_for_tuple {
     ($($x:ident)+) => {
         impl<$($x),+> Rule for ($($x),+,) where $($x: Rule),+, {
@@ -133,7 +147,7 @@ where
 
 #[macro_export]
 macro_rules! star {
-    ($($item:tt),+ $(,)?) => {
+    ($($item:expr),+ $(,)?) => {
         Star((
             $($item),+,
         ))
@@ -169,6 +183,16 @@ mod test {
         let mut p = Parser::new(input);
         let rule = (Ref(rule), EOF);
         rule.parse(&mut p)
+    }
+
+    #[test]
+    fn test_char_range() -> Result<()> {
+        let num = '0'..='9';
+        let rule = (Ref(&num), star!(Ref(&num)));
+        parse(&rule, "0")?;
+        parse(&rule, "123")?;
+        parse(&rule, "9")?;
+        Ok(())
     }
 
     #[test]
