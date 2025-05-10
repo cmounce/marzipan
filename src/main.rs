@@ -4,6 +4,7 @@ mod preprocess;
 mod world;
 
 use anyhow::anyhow;
+use labels::labels::print_labels;
 use preprocess::eval::Context;
 use std::{env, error::Error, fs, path::PathBuf, process::exit};
 use world::World;
@@ -44,6 +45,13 @@ fn main() -> Result<(), Box<dyn Error>> {
             stat.code = eval_context.eval_program(&stat.code)?;
         }
         board.name.push_str(" (♪)");
+    }
+
+    for board in &world.boards {
+        println!("# Board: {}", board.name);
+        for stat in &board.stats {
+            print_labels(stat);
+        }
     }
 
     // Try to write a modified world file
