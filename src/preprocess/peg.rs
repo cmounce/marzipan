@@ -1,6 +1,6 @@
 use std::ops::RangeInclusive;
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Result, bail};
 
 // TODO: Add offsets
 pub enum Tag {
@@ -45,7 +45,7 @@ pub trait Rule {
     fn parse(&self, p: &mut Parser) -> Result<()>;
 }
 
-struct Ref<T>(T);
+pub struct Ref<T>(pub T);
 
 impl<T> Rule for Ref<&T>
 where
@@ -112,7 +112,7 @@ macro_rules! impl_rule_for_tuple {
     };
 }
 
-struct Alt<T>(T);
+pub struct Alt<T>(pub T);
 
 macro_rules! impl_rule_for_alt {
     ($($x:ident)+) => {
@@ -131,6 +131,61 @@ macro_rules! impl_rule_for_alt {
             }
         }
     };
+}
+
+pub struct And<T>(pub T);
+
+impl<T> Rule for And<T>
+where
+    T: Rule,
+{
+    fn parse(&self, p: &mut Parser) -> Result<()> {
+        let save = p.save();
+        self.0.parse(p)?;
+        p.restore(save);
+        Ok(())
+    }
+}
+
+pub struct Dot;
+
+impl Rule for Dot {
+    fn parse(&self, p: &mut Parser) -> Result<()> {
+        if let Some(c) = p.input[p.offset..].chars().next() {
+            p.offset += c.len_utf8();
+            Ok(())
+        } else {
+            bail!("No match")
+        }
+    }
+}
+
+pub struct Not<T>(pub T);
+
+impl<T> Rule for Not<T>
+where
+    T: Rule,
+{
+    fn parse(&self, p: &mut Parser) -> Result<()> {
+        let save = p.save();
+        if self.0.parse(p).is_ok() {
+            p.restore(save);
+            bail!("No match");
+        }
+        Ok(())
+    }
+}
+
+pub struct Opt<T>(pub T);
+
+impl<T> Rule for Opt<T>
+where
+    T: Rule,
+{
+    fn parse(&self, p: &mut Parser) -> Result<()> {
+        let _ = self.0.parse(p);
+        Ok(())
+    }
 }
 
 pub struct Star<T>(pub T);
@@ -220,6 +275,41 @@ mod test {
         parse(&rule, "bar, baz")?;
         parse(&rule, "baz, foo")?;
         Ok(())
+    }
+
+    #[test]
+    fn test_combinator_and() {
+        let has = |x| (star!(Not(x), Dot), x);
+        let foo_bar = (And(has("foo")), And(has("bar")), star!(Dot));
+        parse(&foo_bar, "foo bar").unwrap();
+        parse(&foo_bar, "bar foo").unwrap();
+        parse(&foo_bar, "foo foo").unwrap_err();
+        parse(&foo_bar, "bar bar").unwrap_err();
+    }
+
+    #[test]
+    fn test_combinator_dot() -> Result<()> {
+        let rule = ("foo", Dot, "bar");
+        parse(&rule, "foo bar")?;
+        parse(&rule, "foodbar")?;
+        parse(&rule, "foo\nbar")?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_combinator_not() {
+        let rule = (Not("foo"), star!(Dot));
+        parse(&rule, "bar").unwrap();
+        parse(&rule, "barfoo").unwrap();
+        parse(&rule, "foobar").unwrap_err();
+    }
+
+    #[test]
+    fn test_combinator_opt() {
+        let rule = ("foo", Opt(" "), "bar");
+        parse(&rule, "foobar").unwrap();
+        parse(&rule, "foo bar").unwrap();
+        parse(&rule, "foo  bar").unwrap_err();
     }
 
     #[test]
