@@ -1,14 +1,14 @@
 use std::ops::RangeInclusive;
 
-// TODO: Add offsets
-pub enum Tag {
-    Open(&'static str),
-    Close,
+#[derive(Debug)]
+pub enum Event {
+    Open { kind: &'static str, offset: usize },
+    Close { offset: usize },
 }
 pub struct Parser {
     input: String,
     offset: usize,
-    output: Vec<Tag>,
+    output: Vec<Event>,
 }
 
 #[derive(Clone, Copy)]
@@ -207,6 +207,28 @@ macro_rules! star {
     };
 }
 
+pub struct Tag<T>(pub &'static str, pub T);
+
+impl<T> Rule for Tag<T>
+where
+    T: Rule,
+{
+    fn parse(&self, p: &mut Parser) -> bool {
+        let save = p.save();
+        p.output.push(Event::Open {
+            kind: self.0,
+            offset: p.offset,
+        });
+        if self.1.parse(p) {
+            p.output.push(Event::Close { offset: p.offset });
+            true
+        } else {
+            p.restore(save);
+            false
+        }
+    }
+}
+
 pub struct EOF;
 
 impl Rule for EOF {
@@ -226,7 +248,10 @@ macro_rules! impl_rule_for_many {
 
 impl_rule_for_many!(A B C D E F G H I J);
 
+#[cfg(test)]
 mod test {
+    use insta::assert_debug_snapshot;
+
     use super::*;
 
     fn parse<T: Rule>(rule: &T, input: &str) {
@@ -315,5 +340,31 @@ mod test {
         parse(&csv, "foo");
         parse(&csv, "foo, foo");
         parse(&csv, "foo, foo, foo");
+    }
+
+    #[test]
+    fn test_captures() {
+        let num = Tag("num", ('0'..='9', star!('0'..='9')));
+        let rule = star!(Alt((num, Dot)));
+        let mut p = Parser::new("I have 123 gems and 45 torches.");
+        assert!(rule.parse(&mut p));
+        assert_debug_snapshot!(p.output, @r#"
+        [
+            Open {
+                kind: "num",
+                offset: 7,
+            },
+            Close {
+                offset: 10,
+            },
+            Open {
+                kind: "num",
+                offset: 20,
+            },
+            Close {
+                offset: 22,
+            },
+        ]
+        "#);
     }
 }
