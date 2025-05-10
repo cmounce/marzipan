@@ -1,7 +1,5 @@
 use std::ops::RangeInclusive;
 
-use anyhow::{Result, bail};
-
 // TODO: Add offsets
 pub enum Tag {
     Open(&'static str),
@@ -42,7 +40,7 @@ impl Parser {
 }
 
 pub trait Rule {
-    fn parse(&self, p: &mut Parser) -> Result<()>;
+    fn parse(&self, p: &mut Parser) -> bool;
 }
 
 pub struct Ref<T>(pub T);
@@ -51,7 +49,7 @@ impl<T> Rule for Ref<&T>
 where
     T: Rule,
 {
-    fn parse(&self, p: &mut Parser) -> Result<()> {
+    fn parse(&self, p: &mut Parser) -> bool {
         self.0.parse(p)
     }
 }
@@ -61,51 +59,50 @@ where
     R: Rule,
     F: Fn() -> R,
 {
-    fn parse(&self, p: &mut Parser) -> Result<()> {
+    fn parse(&self, p: &mut Parser) -> bool {
         self().parse(p)
     }
 }
 
 impl Rule for &str {
-    fn parse(&self, p: &mut Parser) -> Result<()> {
+    fn parse(&self, p: &mut Parser) -> bool {
         if p.input[p.offset..].starts_with(self) {
             p.offset += self.len();
-            Ok(())
+            true
         } else {
-            bail!("No match")
+            false
         }
     }
 }
 
 impl Rule for RangeInclusive<char> {
-    fn parse(&self, p: &mut Parser) -> Result<()> {
+    fn parse(&self, p: &mut Parser) -> bool {
         if let Some(c) = p.input[p.offset..].chars().next() {
             if self.contains(&c) {
                 p.offset += c.len_utf8();
-                return Ok(());
+                return true;
             }
         }
-        bail!("No match")
+        false
     }
 }
 
 macro_rules! impl_rule_for_tuple {
     ($($x:ident)+) => {
         impl<$($x),+> Rule for ($($x),+,) where $($x: Rule),+, {
-            fn parse(&self, p: &mut Parser) -> Result<()> {
+            fn parse(&self, p: &mut Parser) -> bool {
                 let save = p.save();
                 let mut lambda = || {
                     #[allow(non_snake_case)]
                     let ($($x),+,) = self;
-                    $($x.parse(p)?;)+
-                    Ok(())
+                    $(if !$x.parse(p) {return false; })+
+                    true
                 };
-                match lambda() {
-                    Ok(x) => Ok(x),
-                    Err(e) => {
-                        p.restore(save);
-                        Err(e)
-                    }
+                if lambda() {
+                    true
+                } else {
+                    p.restore(save);
+                    false
                 }
             }
         }
@@ -117,17 +114,17 @@ pub struct Alt<T>(pub T);
 macro_rules! impl_rule_for_alt {
     ($($x:ident)+) => {
         impl<$($x),+> Rule for Alt<($($x),+,)> where $($x: Rule),+ {
-            fn parse(&self, p: &mut Parser) -> Result<()> {
+            fn parse(&self, p: &mut Parser) -> bool {
                 let save = p.save();
                 #[allow(non_snake_case)]
                 let ($($x),+,) = &self.0;
                 $(
-                    if $x.parse(p).is_ok() {
-                        return Ok(())
+                    if $x.parse(p) {
+                        return true
                     }
                     p.restore(save);
                 )+
-                bail!("No match")
+                false
             }
         }
     };
@@ -139,23 +136,23 @@ impl<T> Rule for And<T>
 where
     T: Rule,
 {
-    fn parse(&self, p: &mut Parser) -> Result<()> {
+    fn parse(&self, p: &mut Parser) -> bool {
         let save = p.save();
-        self.0.parse(p)?;
+        let result = self.0.parse(p);
         p.restore(save);
-        Ok(())
+        result
     }
 }
 
 pub struct Dot;
 
 impl Rule for Dot {
-    fn parse(&self, p: &mut Parser) -> Result<()> {
+    fn parse(&self, p: &mut Parser) -> bool {
         if let Some(c) = p.input[p.offset..].chars().next() {
             p.offset += c.len_utf8();
-            Ok(())
+            true
         } else {
-            bail!("No match")
+            false
         }
     }
 }
@@ -166,13 +163,14 @@ impl<T> Rule for Not<T>
 where
     T: Rule,
 {
-    fn parse(&self, p: &mut Parser) -> Result<()> {
+    fn parse(&self, p: &mut Parser) -> bool {
         let save = p.save();
-        if self.0.parse(p).is_ok() {
+        if self.0.parse(p) {
             p.restore(save);
-            bail!("No match");
+            false
+        } else {
+            true
         }
-        Ok(())
     }
 }
 
@@ -182,9 +180,9 @@ impl<T> Rule for Opt<T>
 where
     T: Rule,
 {
-    fn parse(&self, p: &mut Parser) -> Result<()> {
+    fn parse(&self, p: &mut Parser) -> bool {
         let _ = self.0.parse(p);
-        Ok(())
+        true
     }
 }
 
@@ -194,9 +192,9 @@ impl<T> Rule for Star<T>
 where
     T: Rule,
 {
-    fn parse(&self, p: &mut Parser) -> Result<()> {
-        while self.0.parse(p).is_ok() {}
-        Ok(())
+    fn parse(&self, p: &mut Parser) -> bool {
+        while self.0.parse(p) {}
+        true
     }
 }
 
@@ -212,11 +210,8 @@ macro_rules! star {
 pub struct EOF;
 
 impl Rule for EOF {
-    fn parse(&self, p: &mut Parser) -> Result<()> {
-        if p.offset < p.input.len() {
-            bail!("No match");
-        }
-        Ok(())
+    fn parse(&self, p: &mut Parser) -> bool {
+        p.offset >= p.input.len()
     }
 }
 
@@ -237,13 +232,13 @@ mod test {
     fn parse<T: Rule>(rule: &T, input: &str) {
         let mut p = Parser::new(input);
         let rule = (Ref(rule), EOF);
-        assert!(rule.parse(&mut p).is_ok());
+        assert!(rule.parse(&mut p));
     }
 
     fn parse_err<T: Rule>(rule: &T, input: &str) {
         let mut p = Parser::new(input);
         let rule = (Ref(rule), EOF);
-        assert!(rule.parse(&mut p).is_err());
+        assert!(!rule.parse(&mut p));
     }
 
     #[test]
