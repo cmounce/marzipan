@@ -1,14 +1,22 @@
-use std::ops::RangeInclusive;
+use std::ops::{Range, RangeInclusive};
 
 #[derive(Debug)]
 pub enum Event {
     Open { kind: &'static str, offset: usize },
     Close { offset: usize },
 }
+
+#[derive(Debug)]
+pub struct CaptureInfo {
+    pub kind: &'static str,
+    pub span: Range<usize>,
+    sibling_index: usize,
+}
+
 pub struct Parser {
     input: String,
     offset: usize,
-    output: Vec<Event>,
+    output: Vec<CaptureInfo>,
 }
 
 #[derive(Clone, Copy)]
@@ -36,6 +44,34 @@ impl Parser {
     pub fn restore(&mut self, sp: Savepoint) {
         self.offset = sp.offset;
         self.output.truncate(sp.num_tags);
+    }
+
+    pub fn iter(&self) -> CaptureIterator {
+        CaptureIterator {
+            events: &self.output,
+            index: 0,
+        }
+    }
+}
+
+pub struct CaptureIterator<'a> {
+    events: &'a [CaptureInfo],
+    index: usize,
+}
+
+pub struct CaptureGroup<'a> {
+    pub event: &'a CaptureInfo,
+}
+
+impl<'a> Iterator for CaptureIterator<'a> {
+    type Item = CaptureGroup<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(x) = self.events.get(self.index) {
+            self.index = x.sibling_index;
+            return Some(CaptureGroup { event: x });
+        }
+        None
     }
 }
 
@@ -215,12 +251,16 @@ where
 {
     fn parse(&self, p: &mut Parser) -> bool {
         let save = p.save();
-        p.output.push(Event::Open {
+        let index = p.output.len();
+        let start_offset = p.offset;
+        p.output.push(CaptureInfo {
             kind: self.0,
-            offset: p.offset,
+            span: 0..0,
+            sibling_index: 0,
         });
         if self.1.parse(p) {
-            p.output.push(Event::Close { offset: p.offset });
+            p.output[index].span = start_offset..p.offset;
+            p.output[index].sibling_index = p.output.len();
             true
         } else {
             p.restore(save);
@@ -350,20 +390,27 @@ mod test {
         assert!(rule.parse(&mut p));
         assert_debug_snapshot!(p.output, @r#"
         [
-            Open {
+            CaptureInfo {
                 kind: "num",
-                offset: 7,
+                span: 7..10,
+                sibling_index: 1,
             },
-            Close {
-                offset: 10,
-            },
-            Open {
+            CaptureInfo {
                 kind: "num",
-                offset: 20,
+                span: 20..22,
+                sibling_index: 2,
             },
-            Close {
-                offset: 22,
-            },
+        ]
+        "#);
+
+        let result: Vec<_> = p
+            .iter()
+            .map(|x| &p.input[x.event.span.start..x.event.span.end])
+            .collect();
+        assert_debug_snapshot!(result, @r#"
+        [
+            "123",
+            "45",
         ]
         "#);
     }
