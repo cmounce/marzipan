@@ -234,20 +234,25 @@ impl_rule_for_many!(A B C D E F G H I J);
 mod test {
     use super::*;
 
-    fn parse<T: Rule>(rule: &T, input: &str) -> Result<()> {
+    fn parse<T: Rule>(rule: &T, input: &str) {
         let mut p = Parser::new(input);
         let rule = (Ref(rule), EOF);
-        rule.parse(&mut p)
+        assert!(rule.parse(&mut p).is_ok());
+    }
+
+    fn parse_err<T: Rule>(rule: &T, input: &str) {
+        let mut p = Parser::new(input);
+        let rule = (Ref(rule), EOF);
+        assert!(rule.parse(&mut p).is_err());
     }
 
     #[test]
-    fn test_char_range() -> Result<()> {
+    fn test_char_range() {
         let num = '0'..='9';
         let rule = (Ref(&num), star!(Ref(&num)));
-        parse(&rule, "0")?;
-        parse(&rule, "123")?;
-        parse(&rule, "9")?;
-        Ok(())
+        parse(&rule, "0");
+        parse(&rule, "123");
+        parse(&rule, "9");
     }
 
     #[test]
@@ -255,70 +260,65 @@ mod test {
         let foo = ("f", "o", "o");
         let bar = "bar";
         let rule = (foo, " ", bar);
-        let mut p = Parser::new("foo bar");
-        rule.parse(&mut p).unwrap();
+        parse(&rule, "foo bar");
     }
 
     #[test]
     fn test_combinator_fn_wrapper() {
         let foo = || "foo";
         let bar = (foo, " ", foo);
-        let mut p = Parser::new("foo foo");
-        bar.parse(&mut p).unwrap();
+        parse(&bar, "foo foo");
     }
 
     #[test]
-    fn test_combinator_alt() -> Result<()> {
+    fn test_combinator_alt() {
         let item = Alt(("foo", "bar", "baz"));
         let rule = (Ref(&item), ", ", Ref(&item));
-        parse(&rule, "foo, bar")?;
-        parse(&rule, "bar, baz")?;
-        parse(&rule, "baz, foo")?;
-        Ok(())
+        parse(&rule, "foo, bar");
+        parse(&rule, "bar, baz");
+        parse(&rule, "baz, foo");
     }
 
     #[test]
     fn test_combinator_and() {
         let has = |x| (star!(Not(x), Dot), x);
         let foo_bar = (And(has("foo")), And(has("bar")), star!(Dot));
-        parse(&foo_bar, "foo bar").unwrap();
-        parse(&foo_bar, "bar foo").unwrap();
-        parse(&foo_bar, "foo foo").unwrap_err();
-        parse(&foo_bar, "bar bar").unwrap_err();
+        parse(&foo_bar, "foo bar");
+        parse(&foo_bar, "bar foo");
+        parse_err(&foo_bar, "foo foo");
+        parse_err(&foo_bar, "bar bar");
     }
 
     #[test]
-    fn test_combinator_dot() -> Result<()> {
+    fn test_combinator_dot() {
         let rule = ("foo", Dot, "bar");
-        parse(&rule, "foo bar")?;
-        parse(&rule, "foodbar")?;
-        parse(&rule, "foo\nbar")?;
-        Ok(())
+        parse(&rule, "foo bar");
+        parse(&rule, "foodbar");
+        parse(&rule, "foo\nbar");
     }
 
     #[test]
     fn test_combinator_not() {
         let rule = (Not("foo"), star!(Dot));
-        parse(&rule, "bar").unwrap();
-        parse(&rule, "barfoo").unwrap();
-        parse(&rule, "foobar").unwrap_err();
+        parse(&rule, "bar");
+        parse(&rule, "barfoo");
+        parse_err(&rule, "foobar");
     }
 
     #[test]
     fn test_combinator_opt() {
         let rule = ("foo", Opt(" "), "bar");
-        parse(&rule, "foobar").unwrap();
-        parse(&rule, "foo bar").unwrap();
-        parse(&rule, "foo  bar").unwrap_err();
+        parse(&rule, "foobar");
+        parse(&rule, "foo bar");
+        parse_err(&rule, "foo  bar");
     }
 
     #[test]
-    fn test_combinator_star() -> Result<()> {
+    fn test_combinator_star() {
         let item = "foo";
         let csv = (item, star!(", ", item));
-        parse(&csv, "foo")?;
-        parse(&csv, "foo, foo")?;
-        parse(&csv, "foo, foo, foo")?;
-        Ok(())
+        parse(&csv, "foo");
+        parse(&csv, "foo, foo");
+        parse(&csv, "foo, foo, foo");
     }
 }
