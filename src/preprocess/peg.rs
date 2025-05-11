@@ -182,6 +182,7 @@ macro_rules! impl_rule_for_tuple {
     };
 }
 
+#[derive(Clone)]
 pub struct Alt<T>(pub T);
 
 macro_rules! impl_rule_for_alt {
