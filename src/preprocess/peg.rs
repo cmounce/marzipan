@@ -247,6 +247,30 @@ where
     }
 }
 
+pub struct Plus<T>(pub T);
+
+impl<T> Rule for Plus<T>
+where
+    T: Rule,
+{
+    fn parse(&self, p: &mut Parser) -> bool {
+        if !self.0.parse(p) {
+            return false;
+        }
+        while self.0.parse(p) {}
+        true
+    }
+}
+
+#[macro_export]
+macro_rules! plus {
+    ($($item:expr),+ $(,)?) => {
+        crate::preprocess::peg::Plus((
+            $($item),+,
+        ))
+    };
+}
+
 pub struct Star<T>(pub T);
 
 impl<T> Rule for Star<T>
@@ -262,7 +286,7 @@ where
 #[macro_export]
 macro_rules! star {
     ($($item:expr),+ $(,)?) => {
-        Star((
+        crate::preprocess::peg::Star((
             $($item),+,
         ))
     };
@@ -334,8 +358,7 @@ mod test {
 
     #[test]
     fn test_char_range() {
-        let num = '0'..='9';
-        let rule = (Ref(&num), star!(Ref(&num)));
+        let rule = plus!('0'..='9');
         parse(&rule, "0");
         parse(&rule, "123");
         parse(&rule, "9");
@@ -410,7 +433,7 @@ mod test {
 
     #[test]
     fn test_captures() {
-        let num = Tag("num", ('0'..='9', star!('0'..='9')));
+        let num = Tag("num", plus!('0'..='9'));
         let rule = star!(Alt((num, Dot)));
         let mut p = Parser::new("I have 123 gems and 45 torches.");
         assert!(rule.parse(&mut p));
@@ -432,7 +455,7 @@ mod test {
     #[test]
     fn test_nested_captures() {
         let letter = || 'a'..='z';
-        let user = Tag("user", (letter, star!(letter)));
+        let user = Tag("user", plus!(letter));
         let domain = Tag("domain", (letter, star!(Opt("."), letter)));
         let email = Tag("email", (user, "@", domain));
         let rule = star!(Alt((email, Dot)));

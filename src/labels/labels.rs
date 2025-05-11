@@ -1,5 +1,6 @@
 use crate::{
-    preprocess::peg::{Alt, And, Dot, EOF, Not, Opt, Parser, Rule, Star, Tag},
+    plus,
+    preprocess::peg::{Alt, And, Dot, EOF, Not, Opt, Parser, Rule, Tag},
     star,
     world::Stat,
 };
@@ -32,7 +33,7 @@ fn parse_any_line() -> impl Rule {
 
 fn parse_label_line() -> impl Rule {
     let allowed = Alt(('A'..='Z', 'a'..='z', '0'..='9', "_", "@", "~"));
-    (":", Tag("label", star!(allowed)), eol)
+    (":", Tag("label", plus!(allowed)), eol)
 }
 
 fn eol() -> impl Rule {
