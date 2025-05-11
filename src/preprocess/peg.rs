@@ -1,4 +1,7 @@
-use std::ops::{Range, RangeInclusive};
+use std::{
+    num::NonZero,
+    ops::{Range, RangeInclusive},
+};
 
 pub struct Parser {
     input: String,
@@ -27,7 +30,7 @@ impl Parser {
         self.captures.truncate(sp.num_captures);
     }
 
-    pub fn iter(&self) -> Captures {
+    pub fn iter<'a>(&'a self) -> Captures<'a> {
         Captures {
             input: &self.input,
             raw: &self.captures,
@@ -52,34 +55,41 @@ impl<'a> Iterator for Captures<'a> {
     type Item = Capture<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        while let Some(x) = self.raw.get(self.index) {
-            self.index = x.sibling_index;
-            return Some(Capture {
-                input: &self.input,
-                raw: x,
-            });
-        }
-        None
+        let head = self.raw.get(self.index)?;
+        let subtree_len = head.subtree_len.unwrap().get();
+        let subtree_slice = &self.raw[self.index..self.index + subtree_len];
+        self.index += subtree_len;
+        Some(Capture {
+            input: &self.input,
+            raw: subtree_slice,
+        })
     }
 }
 
 pub struct Capture<'a> {
     input: &'a str,
-    raw: &'a RawCapture,
+    raw: &'a [RawCapture],
 }
 
 impl<'a> Capture<'a> {
+    pub fn children(&self) -> Captures<'a> {
+        Captures {
+            input: &self.input,
+            raw: &self.raw[1..],
+            index: 0,
+        }
+    }
+
     pub fn kind(&self) -> &'static str {
-        &self.raw.kind
+        &self.raw[0].kind
     }
 
     pub fn span(&self) -> Range<usize> {
-        self.raw.span.clone()
+        self.raw[0].span.clone()
     }
 
     pub fn text(&self) -> &'a str {
-        let span = self.raw.span.clone();
-        &self.input[span]
+        &self.input[self.span()]
     }
 }
 
@@ -87,7 +97,7 @@ impl<'a> Capture<'a> {
 struct RawCapture {
     kind: &'static str,
     span: Range<usize>,
-    sibling_index: usize,
+    subtree_len: Option<NonZero<usize>>,
 }
 
 pub trait Rule {
@@ -271,11 +281,12 @@ where
         p.captures.push(RawCapture {
             kind: self.0,
             span: 0..0,
-            sibling_index: 0,
+            subtree_len: None,
         });
         if self.1.parse(p) {
+            let subtree_len = NonZero::new(p.captures.len() - index).unwrap();
             p.captures[index].span = start_offset..p.offset;
-            p.captures[index].sibling_index = p.captures.len();
+            p.captures[index].subtree_len = Some(subtree_len);
             true
         } else {
             p.restore(save);
@@ -414,6 +425,49 @@ mod test {
                 20..22,
                 "45",
             ),
+        ]
+        "#);
+    }
+
+    #[test]
+    fn test_nested_captures() {
+        let letter = || 'a'..='z';
+        let user = Tag("user", (letter, star!(letter)));
+        let domain = Tag("domain", (letter, star!(Opt("."), letter)));
+        let email = Tag("email", (user, "@", domain));
+        let rule = star!(Alt((email, Dot)));
+        let mut p = Parser::new("Send to alice@foo.net or bob@bar.com.");
+        assert!(rule.parse(&mut p));
+
+        // Make sure the capture groups were correct
+        let mut results = Vec::new();
+        for email in p.iter() {
+            assert_eq!(email.kind(), "email");
+            for group in email.children() {
+                results.push(format!("{}: {}", group.kind(), group.text()));
+            }
+        }
+        assert_debug_snapshot!(results, @r#"
+        [
+            "user: alice",
+            "domain: foo.net",
+            "user: bob",
+            "domain: bar.com",
+        ]
+        "#);
+
+        // Make sure &str lifetimes outlive the Capture structs
+        let slices: Vec<&str> = p
+            .iter()
+            .flat_map(|email| email.children())
+            .map(|group| group.text())
+            .collect();
+        assert_debug_snapshot!(slices, @r#"
+        [
+            "alice",
+            "foo.net",
+            "bob",
+            "bar.com",
         ]
         "#);
     }
