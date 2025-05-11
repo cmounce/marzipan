@@ -11,11 +11,9 @@ pub fn print_labels(b: &Stat) {
         return;
     }
 
-    for group in parser.iter() {
-        if group.event.kind == "label" {
-            let span = group.event.span.clone();
-            let s = &b.code[span];
-            println!("- {}", s);
+    for capture in parser.iter() {
+        if capture.kind() == "label" {
+            println!("- {}", capture.text());
         }
     }
 }

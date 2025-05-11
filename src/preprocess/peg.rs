@@ -1,28 +1,9 @@
 use std::ops::{Range, RangeInclusive};
 
-#[derive(Debug)]
-pub enum Event {
-    Open { kind: &'static str, offset: usize },
-    Close { offset: usize },
-}
-
-#[derive(Debug)]
-pub struct CaptureInfo {
-    pub kind: &'static str,
-    pub span: Range<usize>,
-    sibling_index: usize,
-}
-
 pub struct Parser {
     input: String,
     offset: usize,
-    output: Vec<CaptureInfo>,
-}
-
-#[derive(Clone, Copy)]
-pub struct Savepoint {
-    offset: usize,
-    num_tags: usize,
+    captures: Vec<RawCapture>,
 }
 
 impl Parser {
@@ -30,49 +11,83 @@ impl Parser {
         Self {
             input: input.into(),
             offset: 0,
-            output: Vec::new(),
+            captures: Vec::new(),
         }
     }
 
     pub fn save(&self) -> Savepoint {
         Savepoint {
             offset: self.offset,
-            num_tags: self.output.len(),
+            num_captures: self.captures.len(),
         }
     }
 
     pub fn restore(&mut self, sp: Savepoint) {
         self.offset = sp.offset;
-        self.output.truncate(sp.num_tags);
+        self.captures.truncate(sp.num_captures);
     }
 
-    pub fn iter(&self) -> CaptureIterator {
-        CaptureIterator {
-            events: &self.output,
+    pub fn iter(&self) -> Captures {
+        Captures {
+            input: &self.input,
+            raw: &self.captures,
             index: 0,
         }
     }
 }
 
-pub struct CaptureIterator<'a> {
-    events: &'a [CaptureInfo],
+#[derive(Clone, Copy)]
+pub struct Savepoint {
+    offset: usize,
+    num_captures: usize,
+}
+
+pub struct Captures<'a> {
+    input: &'a str,
+    raw: &'a [RawCapture],
     index: usize,
 }
 
-pub struct CaptureGroup<'a> {
-    pub event: &'a CaptureInfo,
-}
-
-impl<'a> Iterator for CaptureIterator<'a> {
-    type Item = CaptureGroup<'a>;
+impl<'a> Iterator for Captures<'a> {
+    type Item = Capture<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        while let Some(x) = self.events.get(self.index) {
+        while let Some(x) = self.raw.get(self.index) {
             self.index = x.sibling_index;
-            return Some(CaptureGroup { event: x });
+            return Some(Capture {
+                input: &self.input,
+                raw: x,
+            });
         }
         None
     }
+}
+
+pub struct Capture<'a> {
+    input: &'a str,
+    raw: &'a RawCapture,
+}
+
+impl<'a> Capture<'a> {
+    pub fn kind(&self) -> &'static str {
+        &self.raw.kind
+    }
+
+    pub fn span(&self) -> Range<usize> {
+        self.raw.span.clone()
+    }
+
+    pub fn text(&self) -> &'a str {
+        let span = self.raw.span.clone();
+        &self.input[span]
+    }
+}
+
+#[derive(Debug)]
+struct RawCapture {
+    kind: &'static str,
+    span: Range<usize>,
+    sibling_index: usize,
 }
 
 pub trait Rule {
@@ -251,16 +266,16 @@ where
 {
     fn parse(&self, p: &mut Parser) -> bool {
         let save = p.save();
-        let index = p.output.len();
+        let index = p.captures.len();
         let start_offset = p.offset;
-        p.output.push(CaptureInfo {
+        p.captures.push(RawCapture {
             kind: self.0,
             span: 0..0,
             sibling_index: 0,
         });
         if self.1.parse(p) {
-            p.output[index].span = start_offset..p.offset;
-            p.output[index].sibling_index = p.output.len();
+            p.captures[index].span = start_offset..p.offset;
+            p.captures[index].sibling_index = p.captures.len();
             true
         } else {
             p.restore(save);
@@ -388,29 +403,17 @@ mod test {
         let rule = star!(Alt((num, Dot)));
         let mut p = Parser::new("I have 123 gems and 45 torches.");
         assert!(rule.parse(&mut p));
-        assert_debug_snapshot!(p.output, @r#"
+        let results: Vec<_> = p.iter().map(|x| (x.span(), x.text())).collect();
+        assert_debug_snapshot!(results, @r#"
         [
-            CaptureInfo {
-                kind: "num",
-                span: 7..10,
-                sibling_index: 1,
-            },
-            CaptureInfo {
-                kind: "num",
-                span: 20..22,
-                sibling_index: 2,
-            },
-        ]
-        "#);
-
-        let result: Vec<_> = p
-            .iter()
-            .map(|x| &p.input[x.event.span.start..x.event.span.end])
-            .collect();
-        assert_debug_snapshot!(result, @r#"
-        [
-            "123",
-            "45",
+            (
+                7..10,
+                "123",
+            ),
+            (
+                20..22,
+                "45",
+            ),
         ]
         "#);
     }
