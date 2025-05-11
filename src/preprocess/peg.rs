@@ -7,6 +7,7 @@ pub struct Parser {
     input: String,
     offset: usize,
     captures: Vec<RawCapture>,
+    case_sensitive: bool,
 }
 
 impl Parser {
@@ -15,6 +16,7 @@ impl Parser {
             input: input.into(),
             offset: 0,
             captures: Vec::new(),
+            case_sensitive: true,
         }
     }
 
@@ -127,7 +129,12 @@ where
 
 impl Rule for &str {
     fn parse(&self, p: &mut Parser) -> bool {
-        if p.input[p.offset..].starts_with(self) {
+        let matches = if p.case_sensitive {
+            p.input[p.offset..].starts_with(self)
+        } else {
+            p.input[p.offset..(p.offset + self.len())].eq_ignore_ascii_case(self)
+        };
+        if matches {
             p.offset += self.len();
             true
         } else {
@@ -139,7 +146,12 @@ impl Rule for &str {
 impl Rule for RangeInclusive<char> {
     fn parse(&self, p: &mut Parser) -> bool {
         if let Some(c) = p.input[p.offset..].chars().next() {
-            if self.contains(&c) {
+            let matches = if p.case_sensitive {
+                self.contains(&c)
+            } else {
+                self.contains(&c.to_ascii_uppercase()) || self.contains(&c.to_ascii_lowercase())
+            };
+            if matches {
                 p.offset += c.len_utf8();
                 return true;
             }
@@ -215,6 +227,21 @@ impl Rule for Dot {
         } else {
             false
         }
+    }
+}
+
+pub struct NoCase<T>(pub T);
+
+impl<T> Rule for NoCase<T>
+where
+    T: Rule,
+{
+    fn parse(&self, p: &mut Parser) -> bool {
+        let old_value = p.case_sensitive;
+        p.case_sensitive = false;
+        let result = self.0.parse(p);
+        p.case_sensitive = old_value;
+        result
     }
 }
 
@@ -404,6 +431,24 @@ mod test {
         parse(&rule, "foo bar");
         parse(&rule, "foodbar");
         parse(&rule, "foo\nbar");
+    }
+
+    #[test]
+    fn test_combinator_nocase() {
+        let rule = NoCase(("foo-", 'a'..='z', 'A'..='Z'));
+        parse(&rule, "foo-ab");
+        parse(&rule, "fOO-cD");
+        parse(&rule, "Foo-Ef");
+        parse(&rule, "FOO-GH");
+    }
+
+    #[test]
+    fn test_mixed_case() {
+        let rule = ("foo ", NoCase("bar"), " baz");
+        parse(&rule, "foo bar baz");
+        parse(&rule, "foo BAR baz");
+        parse_err(&rule, "FOO bar baz");
+        parse_err(&rule, "foo bar BAZ");
     }
 
     #[test]
