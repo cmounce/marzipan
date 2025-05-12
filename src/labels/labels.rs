@@ -1,6 +1,6 @@
 use crate::{
     plus,
-    preprocess::peg::{Alt, And, Dot, EOF, Not, Opt, Parser, Rule, Tag},
+    preprocess::peg::{Alt, And, Dot, EOF, NoCase, Not, Opt, Parser, Rule, Tag},
     star,
     world::Stat,
 };
@@ -24,7 +24,11 @@ fn program() -> impl Rule {
 }
 
 fn line() -> impl Rule {
-    Alt((label_line, any_line))
+    Alt((send, label_line, any_line))
+}
+
+fn send() -> impl Rule {
+    ("#", w, NoCase("send"), ww, Tag("ref", label_name), w, eol)
 }
 
 fn any_line() -> impl Rule {
@@ -52,8 +56,18 @@ fn eol() -> impl Rule {
     Alt((And("\n"), EOF))
 }
 
+fn w() -> impl Rule {
+    star!(" ")
+}
+
+fn ww() -> impl Rule {
+    plus!(" ")
+}
+
 #[cfg(test)]
 mod test {
+    use insta::assert_debug_snapshot;
+
     use crate::preprocess::peg::Ref;
 
     use super::*;
@@ -82,5 +96,21 @@ mod test {
         parse_err(&label_name, "foo.bar.baz");
         parse_err(&label_name, "foo~bar~baz");
         parse_err(&label_name, "~foo");
+    }
+
+    #[test]
+    fn test_references() {
+        let mut p = Parser::new("#send foo");
+        assert!(program.parse(&mut p));
+        let result: Vec<_> = p
+            .iter()
+            .filter(|x| x.kind() == "ref")
+            .map(|x| x.text())
+            .collect();
+        assert_debug_snapshot!(result, @r#"
+        [
+            "foo",
+        ]
+        "#);
     }
 }
