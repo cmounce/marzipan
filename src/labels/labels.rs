@@ -24,11 +24,34 @@ fn program() -> impl Rule {
 }
 
 fn line() -> impl Rule {
-    Alt((send, label_line, any_line))
+    (motion_prefix, Alt((command_line, label_line, any_line)))
 }
 
-fn send() -> impl Rule {
-    ("#", w, NoCase("send"), ww, Tag("ref", label_name), w, eol)
+fn motion_prefix() -> impl Rule {
+    star!(Alt(("/", "?")), w, direction)
+}
+
+fn command_line() -> impl Rule {
+    ("#", w, bare_command)
+}
+
+fn bare_command() -> impl Rule {
+    Alt((bare_if, bare_send))
+}
+
+fn bare_if() -> impl Rule {
+    (
+        "if",
+        w,
+        condition,
+        w,
+        Opt(("then", w)),
+        Box::new(line) as Box<dyn Rule>,
+    )
+}
+
+fn bare_send() -> impl Rule {
+    (NoCase("send"), ww, Tag("ref", label_name), w, eol)
 }
 
 fn any_line() -> impl Rule {
@@ -160,7 +183,9 @@ fn ww() -> impl Rule {
 
 #[cfg(test)]
 mod test {
-    use insta::assert_debug_snapshot;
+    use std::fs;
+
+    use insta::{assert_debug_snapshot, assert_snapshot};
 
     use crate::preprocess::peg::Ref;
 
@@ -224,5 +249,27 @@ mod test {
             "foo",
         ]
         "#);
+    }
+
+    #[test]
+    fn test_label_detection() {
+        let input = fs::read_to_string("tests/labels/find-all.txt").unwrap();
+        let mut parser = Parser::new(&input);
+        assert!(program.parse(&mut parser));
+
+        let mut result = String::new();
+        let mut last_index = 0;
+        for group in parser.iter() {
+            let before = &input[last_index..group.span().start];
+            let inner = match group.kind() {
+                "label" => format!("({})", group.text()),
+                _ => group.text().into(),
+            };
+            result.push_str(before);
+            result.push_str(&inner);
+            last_index = group.span().end;
+        }
+        result.push_str(&input[last_index..]);
+        assert_snapshot!(result);
     }
 }

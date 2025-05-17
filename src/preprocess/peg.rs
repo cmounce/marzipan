@@ -106,6 +106,12 @@ pub trait Rule {
     fn parse(&self, p: &mut Parser) -> bool;
 }
 
+impl Rule for Box<dyn Rule> {
+    fn parse(&self, p: &mut Parser) -> bool {
+        self.as_ref().parse(p)
+    }
+}
+
 pub struct Ref<T>(pub T);
 
 impl<T> Rule for Ref<&T>
