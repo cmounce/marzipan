@@ -46,12 +46,45 @@ fn bare_if() -> impl Rule {
         condition,
         w,
         Opt(("then", w)),
-        Box::new(line) as Box<dyn Rule>,
+        Alt((shorthand_send, Box::new(line) as Box<dyn Rule>)),
     )
 }
 
+/// `send` without a preceding `#`
 fn bare_send() -> impl Rule {
-    (NoCase("send"), ww, Tag("ref", label_name), w, eol)
+    (NoCase("send"), ww, label_reference, w, eol)
+}
+
+/// `send` without a send keyword
+fn shorthand_send() -> impl Rule {
+    let af = (
+        And('a'..='f'),
+        Alt((
+            "become", "bind", "change", "char", "clear", "cycle", "die", "end", "endgame",
+        )),
+    );
+    let gr = (
+        And('g'..='r'),
+        Alt((
+            "go", "idle", "if", "lock", "play", "put", "restart", "restore",
+        )),
+    );
+    let sz = (
+        And('s'..='z'),
+        Alt((
+            "send",
+            "set",
+            "shoot",
+            "take",
+            "throwstar",
+            "try",
+            "unlock",
+            "walk",
+            "zap",
+        )),
+    );
+    let command = Alt((af, gr, sz));
+    (Not(command), label_reference, w, eol)
 }
 
 fn any_line() -> impl Rule {
@@ -138,6 +171,7 @@ fn condition() -> impl Rule {
         ("blocked", ww, direction),
         "contact",
         "energized",
+        ('a'..='z', star!(word_char)),
     ));
     (star!("not", ww), base)
 }
@@ -162,6 +196,16 @@ fn label_name() -> impl Rule {
         Opt(namespace),
         star!(word_char),
         Opt((".", plus!(word_char))),
+    )
+}
+
+fn label_reference() -> impl Rule {
+    Tag(
+        "ref",
+        (
+            Opt((Tag("dest", plus!(word_char)), ":")),
+            Tag("name", label_name),
+        ),
     )
 }
 
@@ -263,6 +307,7 @@ mod test {
             let before = &input[last_index..group.span().start];
             let inner = match group.kind() {
                 "label" => format!("({})", group.text()),
+                "ref" => format!("[{}]", group.text()),
                 _ => group.text().into(),
             };
             result.push_str(before);

@@ -4,6 +4,6 @@ expression: result
 ---
 'Find all the labels and their references
 :(foo)
-#send foo
-#if blocked n #send foo
-#if bar foo
+#send [foo]
+#if blocked n #send [foo]
+#if bar [foo]
