@@ -6,14 +6,14 @@ mod world;
 
 use anyhow::anyhow;
 use labels::labels::print_labels;
-use peg_macro::grammar;
+use peg_macro::grammar_old;
 use preprocess::eval::Context;
 use std::{env, error::Error, fs, path::PathBuf, process::exit};
 use world::World;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    grammar!(123);
-    grammar!("abc");
+    grammar_old!(123);
+    grammar_old!("abc");
 
     let args: Vec<String> = env::args().collect();
     if args.len() != 2 {
