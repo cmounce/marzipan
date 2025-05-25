@@ -65,8 +65,8 @@ fn parse_oo(p: &mut ParseState) -> bool {
 }
 
 grammar! {
-    generated_this;
-    generated_that;
+    generated_this = foo;
+    generated_that = "bar" baz;
 }
 
 #[cfg(test)]
@@ -85,7 +85,7 @@ mod tests {
 
     #[test]
     fn test_generated() {
-        assert_snapshot!(generated_this(), @"I'm a generated function!");
-        assert_snapshot!(generated_that(), @"I'm a generated function!");
+        assert_snapshot!(generated_this(), @"I'm generated! (rule foo)");
+        assert_snapshot!(generated_that(), @r#"I'm generated! (literal "bar", rule baz)"#);
     }
 }

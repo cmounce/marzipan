@@ -1,7 +1,7 @@
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{
-    Ident, Token,
+    Ident, LitStr, Token,
     parse::{Parse, ParseStream},
     parse_macro_input,
     punctuated::Punctuated,
@@ -13,6 +13,12 @@ struct Grammar {
 
 struct Rule {
     name: Ident,
+    terms: Vec<Term>,
+}
+
+enum Term {
+    Rule(Ident),
+    Literal(LitStr),
 }
 
 impl Parse for Grammar {
@@ -25,10 +31,26 @@ impl Parse for Grammar {
 
 impl Parse for Rule {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let result = Self {
-            name: input.parse()?,
-        };
-        Ok(result)
+        let name = input.parse()?;
+        input.parse::<Token![=]>()?;
+        let mut terms = vec![];
+        while !input.peek(Token![;]) {
+            terms.push(input.parse()?);
+        }
+        Ok(Self { name, terms })
+    }
+}
+
+impl Parse for Term {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let look = input.lookahead1();
+        if look.peek(Ident) {
+            input.parse().map(Term::Rule)
+        } else if look.peek(LitStr) {
+            input.parse().map(Term::Literal)
+        } else {
+            Err(look.error())
+        }
     }
 }
 
@@ -65,9 +87,21 @@ pub fn grammar(ts: TokenStream) -> TokenStream {
         .iter()
         .map(|r| {
             let fn_name = &r.name;
+
+            // Generate a string for debugging
+            let term_strs: Vec<String> = r
+                .terms
+                .iter()
+                .map(|t| match t {
+                    Term::Rule(ident) => format!("rule {}", ident.to_string()),
+                    Term::Literal(lit_str) => format!("literal \"{}\"", lit_str.value()),
+                })
+                .collect();
+            let text = format!("I'm generated! ({})", term_strs.join(", "));
+
             quote! {
                 fn #fn_name() -> String {
-                    "I'm a generated function!".into()
+                    #text.into()
                 }
             }
         })
