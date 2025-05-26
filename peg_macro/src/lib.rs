@@ -18,6 +18,7 @@ struct Rule {
 }
 
 enum Term {
+    Choice(Vec<Term>),
     Literal(LitStr),
     Rule(Ident),
     Sequence(Vec<Term>),
@@ -42,8 +43,7 @@ impl Parse for Rule {
 
 impl Parse for Term {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let mut terms = vec![];
-        let parse_one = || {
+        fn parse_atom(input: ParseStream) -> syn::Result<Term> {
             let look = input.lookahead1();
             if look.peek(Ident) {
                 input.parse().map(Term::Rule)
@@ -52,16 +52,34 @@ impl Parse for Term {
             } else {
                 Err(look.error())
             }
-        };
-        terms.push(parse_one()?);
-        while !input.is_empty() && !input.peek(Token![;]) {
-            terms.push(parse_one()?);
         }
-        if terms.len() == 1 {
-            Ok(terms.pop().unwrap())
-        } else {
-            Ok(Term::Sequence(terms))
+
+        fn parse_term(input: ParseStream) -> syn::Result<Term> {
+            let mut choices = vec![parse_atom(input)?];
+            while input.peek(Token![/]) {
+                input.parse::<Token![/]>()?;
+                choices.push(parse_atom(input)?);
+            }
+            if choices.len() == 1 {
+                Ok(choices.pop().unwrap())
+            } else {
+                Ok(Term::Choice(choices))
+            }
         }
+
+        fn parse_sequence(input: ParseStream) -> syn::Result<Term> {
+            let mut terms = vec![parse_term(input)?];
+            while !input.is_empty() && !input.peek(Token![;]) {
+                terms.push(parse_term(input)?);
+            }
+            if terms.len() == 1 {
+                Ok(terms.pop().unwrap())
+            } else {
+                Ok(Term::Sequence(terms))
+            }
+        }
+
+        parse_sequence(input)
     }
 }
 
@@ -103,13 +121,18 @@ impl Term {
                     #(#parts)*
                 }
             }
+            Term::Choice(terms) => terms
+                .iter()
+                .map(|t| t.generate_wrapped_code())
+                .reduce(|x, y| quote! { #x || #y })
+                .unwrap(),
         }
     }
 
     fn generate_wrapped_code(&self) -> proc_macro2::TokenStream {
         let code = self.generate_code();
         match self {
-            Term::Sequence(_) => quote! {
+            Term::Sequence(_) | Term::Choice(_) => quote! {
                 (|| {
                     #code
                 })()

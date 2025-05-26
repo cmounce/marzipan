@@ -70,8 +70,8 @@ mod tests {
 
     grammar! {
         fake_csv = line "\n" line;
-        line = foo "," foo;
-        foo = "foo";
+        line = item "," item;
+        item = "foo" / "bar";
     }
 
     #[test]
@@ -84,7 +84,7 @@ mod tests {
 
     #[test]
     fn test_generated() {
-        let mut p = ParseState::new("foo,foo\nfoo,foo");
+        let mut p = ParseState::new("foo,bar\nbar,foo");
         assert!(fake_csv(&mut p));
         let mut p = ParseState::new("foo,foo\nfoo;foo");
         assert!(!fake_csv(&mut p));
