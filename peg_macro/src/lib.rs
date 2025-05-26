@@ -13,7 +13,7 @@ struct Grammar {
 
 struct Rule {
     name: Ident,
-    terms: Vec<Term>,
+    definition: Term,
 }
 
 enum Term {
@@ -34,23 +34,32 @@ impl Parse for Rule {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let name = input.parse()?;
         input.parse::<Token![=]>()?;
-        let mut terms = vec![];
-        while !input.peek(Token![;]) {
-            terms.push(input.parse()?);
-        }
-        Ok(Self { name, terms })
+        let definition = input.parse()?;
+        Ok(Self { name, definition })
     }
 }
 
 impl Parse for Term {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let look = input.lookahead1();
-        if look.peek(Ident) {
-            input.parse().map(Term::Rule)
-        } else if look.peek(LitStr) {
-            input.parse().map(Term::Literal)
+        let mut terms = vec![];
+        let parse_one = || {
+            let look = input.lookahead1();
+            if look.peek(Ident) {
+                input.parse().map(Term::Rule)
+            } else if look.peek(LitStr) {
+                input.parse().map(Term::Literal)
+            } else {
+                Err(look.error())
+            }
+        };
+        terms.push(parse_one()?);
+        while !input.is_empty() && !input.peek(Token![;]) {
+            terms.push(parse_one()?);
+        }
+        if terms.len() == 1 {
+            Ok(terms.pop().unwrap())
         } else {
-            Err(look.error())
+            Ok(Term::Sequence(terms))
         }
     }
 }
@@ -66,7 +75,9 @@ impl Term {
                 println!("parse literal");
                 // call p.literal()
             },
-            Term::Sequence(terms) => todo!(),
+            Term::Sequence(terms) => quote! {
+                println!("sequence");
+            },
         }
     }
 }
@@ -106,22 +117,22 @@ pub fn grammar(ts: TokenStream) -> TokenStream {
             let fn_name = &r.name;
 
             // Generate a string for debugging
-            let term_strs: Vec<String> = r
-                .terms
-                .iter()
-                .map(|t| match t {
+            fn term2str(t: &Term) -> String {
+                match t {
                     Term::Rule(ident) => format!("rule {}", ident.to_string()),
                     Term::Literal(lit_str) => format!("literal \"{}\"", lit_str.value()),
-                    Term::Sequence(terms) => todo!(),
-                })
-                .collect();
-            let text = format!("I'm generated! ({})", term_strs.join(", "));
+                    Term::Sequence(terms) => {
+                        let parts: Vec<_> = terms.iter().map(term2str).collect();
+                        format!("sequence [{}]", parts.join(", "))
+                    }
+                }
+            }
+            let text = format!("I'm generated! ({})", term2str(&r.definition));
 
-            let generated: Vec<_> = r.terms.iter().map(|t| t.generate_code()).collect();
-
+            let generated = r.definition.generate_code();
             quote! {
                 fn #fn_name(p: &mut crate::peg::ParseState) -> String {
-                    #(#generated)*
+                    #generated
                     #text.into()
                 }
             }
