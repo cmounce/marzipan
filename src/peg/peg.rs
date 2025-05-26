@@ -85,7 +85,8 @@ mod tests {
 
     #[test]
     fn test_generated() {
-        assert_snapshot!(generated_this(), @"I'm generated! (rule foo)");
-        assert_snapshot!(generated_that(), @r#"I'm generated! (literal "bar", rule baz)"#);
+        let mut p = ParseState::new("");
+        assert_snapshot!(generated_this(&mut p), @"I'm generated! (rule foo)");
+        assert_snapshot!(generated_that(&mut p), @r#"I'm generated! (literal "bar", rule baz)"#);
     }
 }

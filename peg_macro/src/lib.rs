@@ -17,8 +17,9 @@ struct Rule {
 }
 
 enum Term {
-    Rule(Ident),
     Literal(LitStr),
+    Rule(Ident),
+    Sequence(Vec<Term>),
 }
 
 impl Parse for Grammar {
@@ -50,6 +51,22 @@ impl Parse for Term {
             input.parse().map(Term::Literal)
         } else {
             Err(look.error())
+        }
+    }
+}
+
+impl Term {
+    fn generate_code(&self) -> proc_macro2::TokenStream {
+        match self {
+            Term::Rule(ident) => quote! {
+                println!("call subrule");
+                // call subrule
+            },
+            Term::Literal(lit_str) => quote! {
+                println!("parse literal");
+                // call p.literal()
+            },
+            Term::Sequence(terms) => todo!(),
         }
     }
 }
@@ -95,12 +112,16 @@ pub fn grammar(ts: TokenStream) -> TokenStream {
                 .map(|t| match t {
                     Term::Rule(ident) => format!("rule {}", ident.to_string()),
                     Term::Literal(lit_str) => format!("literal \"{}\"", lit_str.value()),
+                    Term::Sequence(terms) => todo!(),
                 })
                 .collect();
             let text = format!("I'm generated! ({})", term_strs.join(", "));
 
+            let generated: Vec<_> = r.terms.iter().map(|t| t.generate_code()).collect();
+
             quote! {
-                fn #fn_name() -> String {
+                fn #fn_name(p: &mut crate::peg::ParseState) -> String {
+                    #(#generated)*
                     #text.into()
                 }
             }
