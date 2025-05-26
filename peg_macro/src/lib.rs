@@ -1,3 +1,4 @@
+use itertools::{Itertools, Position};
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{
@@ -68,16 +69,52 @@ impl Term {
     fn generate_code(&self) -> proc_macro2::TokenStream {
         match self {
             Term::Rule(ident) => quote! {
-                println!("call subrule");
-                // call subrule
+                #ident(p)
             },
             Term::Literal(lit_str) => quote! {
-                println!("parse literal");
-                // call p.literal()
+                p.literal(#lit_str)
             },
-            Term::Sequence(terms) => quote! {
-                println!("sequence");
+            Term::Sequence(terms) => {
+                let parts: Vec<_> = terms
+                    .iter()
+                    .with_position()
+                    .map(|(pos, term)| {
+                        let code = term.generate_wrapped_code();
+                        match pos {
+                            Position::First => quote! {
+                                let result = #code;
+                                if !result {
+                                    return false;
+                                }
+                            },
+                            Position::Middle => quote! {
+                                let result = #code;
+                                if !result {
+                                    p.restore(save);
+                                    return false;
+                                }
+                            },
+                            _ => code,
+                        }
+                    })
+                    .collect();
+                quote! {
+                    let save = p.save();
+                    #(#parts)*
+                }
+            }
+        }
+    }
+
+    fn generate_wrapped_code(&self) -> proc_macro2::TokenStream {
+        let code = self.generate_code();
+        match self {
+            Term::Sequence(_) => quote! {
+                (|| {
+                    #code
+                })()
             },
+            _ => code,
         }
     }
 }
@@ -116,24 +153,24 @@ pub fn grammar(ts: TokenStream) -> TokenStream {
         .map(|r| {
             let fn_name = &r.name;
 
-            // Generate a string for debugging
-            fn term2str(t: &Term) -> String {
-                match t {
-                    Term::Rule(ident) => format!("rule {}", ident.to_string()),
-                    Term::Literal(lit_str) => format!("literal \"{}\"", lit_str.value()),
-                    Term::Sequence(terms) => {
-                        let parts: Vec<_> = terms.iter().map(term2str).collect();
-                        format!("sequence [{}]", parts.join(", "))
-                    }
-                }
-            }
-            let text = format!("I'm generated! ({})", term2str(&r.definition));
+            // // Generate a string for debugging
+            // fn term2str(t: &Term) -> String {
+            //     match t {
+            //         Term::Rule(ident) => format!("rule {}", ident.to_string()),
+            //         Term::Literal(lit_str) => format!("literal \"{}\"", lit_str.value()),
+            //         Term::Sequence(terms) => {
+            //             let parts: Vec<_> = terms.iter().map(term2str).collect();
+            //             format!("sequence [{}]", parts.join(", "))
+            //         }
+            //     }
+            // }
+            // let text = format!("I'm generated! ({})", term2str(&r.definition));
 
             let generated = r.definition.generate_code();
             quote! {
-                fn #fn_name(p: &mut crate::peg::ParseState) -> String {
+                fn #fn_name(p: &mut crate::peg::ParseState) -> bool {
+                    // println!(#text.into());
                     #generated
-                    #text.into()
                 }
             }
         })

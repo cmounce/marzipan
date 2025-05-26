@@ -1,5 +1,3 @@
-use peg_macro::grammar;
-
 #[derive(Debug)]
 #[allow(dead_code)]
 pub enum Foo {
@@ -64,16 +62,17 @@ fn parse_oo(p: &mut ParseState) -> bool {
     p.literal("oo")
 }
 
-grammar! {
-    generated_this = foo;
-    generated_that = "bar" baz;
-}
-
 #[cfg(test)]
 mod tests {
-    use insta::assert_snapshot;
+    use peg_macro::grammar;
 
     use super::*;
+
+    grammar! {
+        fake_csv = line "\n" line;
+        line = foo "," foo;
+        foo = "foo";
+    }
 
     #[test]
     fn test_parser() {
@@ -85,8 +84,9 @@ mod tests {
 
     #[test]
     fn test_generated() {
-        let mut p = ParseState::new("");
-        assert_snapshot!(generated_this(&mut p), @"I'm generated! (rule foo)");
-        assert_snapshot!(generated_that(&mut p), @r#"I'm generated! (sequence [literal "bar", rule baz])"#);
+        let mut p = ParseState::new("foo,foo\nfoo,foo");
+        assert!(fake_csv(&mut p));
+        let mut p = ParseState::new("foo,foo\nfoo;foo");
+        assert!(!fake_csv(&mut p));
     }
 }
