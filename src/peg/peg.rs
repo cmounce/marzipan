@@ -1,10 +1,3 @@
-#[derive(Debug)]
-#[allow(dead_code)]
-pub enum Foo {
-    Bar(usize),
-    Baz(String),
-}
-
 pub struct ParseState {
     pub input: String,
     pub offset: usize,
@@ -42,26 +35,6 @@ impl ParseState {
     }
 }
 
-fn parse_foo(p: &mut ParseState) -> bool {
-    let save = p.save();
-    if !parse_f(p) {
-        return false;
-    }
-    if !parse_oo(p) {
-        p.restore(save);
-        return false;
-    }
-    true
-}
-
-fn parse_f(p: &mut ParseState) -> bool {
-    p.literal("f")
-}
-
-fn parse_oo(p: &mut ParseState) -> bool {
-    p.literal("oo")
-}
-
 #[cfg(test)]
 mod tests {
     use peg_macro::grammar;
@@ -72,14 +45,15 @@ mod tests {
         fake_csv = line "\n" line;
         line = item "," item;
         item = "foo" / "bar";
+
+        option = "(" "x"? ")";
+        plus = "(" "x"+ ")";
+        star = "(" "x"* ")";
     }
 
-    #[test]
-    fn test_parser() {
-        let mut p = ParseState::new("foo");
-        assert!(parse_foo(&mut p));
-        let mut p = ParseState::new("fee");
-        assert!(!parse_foo(&mut p));
+    fn parse<T: Fn(&mut ParseState) -> bool>(rule: T, s: &str) -> bool {
+        let mut p = ParseState::new(s);
+        rule(&mut p)
     }
 
     #[test]
@@ -88,5 +62,23 @@ mod tests {
         assert!(fake_csv(&mut p));
         let mut p = ParseState::new("foo,foo\nfoo;foo");
         assert!(!fake_csv(&mut p));
+    }
+
+    #[test]
+    fn test_repetition_suffixes() {
+        let zero = "()";
+        assert!(parse(option, zero));
+        assert!(parse(star, zero));
+        assert!(!parse(plus, zero));
+
+        let one = "(x)";
+        assert!(parse(option, one));
+        assert!(parse(star, one));
+        assert!(parse(plus, one));
+
+        let many = "(xxx)";
+        assert!(!parse(option, many));
+        assert!(parse(star, many));
+        assert!(parse(plus, many));
     }
 }

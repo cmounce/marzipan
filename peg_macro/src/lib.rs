@@ -19,8 +19,11 @@ struct Rule {
 enum Term {
     Choice(Vec<Term>),
     Literal(LitStr),
+    Optional(Box<Term>),
     Rule(Ident),
     Sequence(Vec<Term>),
+    Star(Box<Term>),
+    Plus(Box<Term>),
 }
 
 impl Parse for Grammar {
@@ -53,23 +56,26 @@ impl Parse for Term {
             }
         }
 
-        fn parse_term(input: ParseStream) -> syn::Result<Term> {
-            let mut choices = vec![parse_atom(input)?];
-            while input.peek(Token![/]) {
-                input.parse::<Token![/]>()?;
-                choices.push(parse_atom(input)?);
+        fn parse_repeat(input: ParseStream) -> syn::Result<Term> {
+            let mut result = parse_atom(input)?;
+            loop {
+                if input.parse::<Token![?]>().is_ok() {
+                    result = Term::Optional(Box::new(result));
+                } else if input.parse::<Token![+]>().is_ok() {
+                    result = Term::Plus(Box::new(result));
+                } else if input.parse::<Token![*]>().is_ok() {
+                    result = Term::Star(Box::new(result));
+                } else {
+                    break;
+                }
             }
-            if choices.len() == 1 {
-                Ok(choices.pop().unwrap())
-            } else {
-                Ok(Term::Choice(choices))
-            }
+            Ok(result)
         }
 
         fn parse_sequence(input: ParseStream) -> syn::Result<Term> {
-            let mut terms = vec![parse_term(input)?];
-            while !input.is_empty() && !input.peek(Token![;]) {
-                terms.push(parse_term(input)?);
+            let mut terms = vec![parse_repeat(input)?];
+            while input.peek(Ident) || input.peek(LitStr) {
+                terms.push(parse_repeat(input)?);
             }
             if terms.len() == 1 {
                 Ok(terms.pop().unwrap())
@@ -78,7 +84,20 @@ impl Parse for Term {
             }
         }
 
-        parse_sequence(input)
+        fn parse_choice(input: ParseStream) -> syn::Result<Term> {
+            let mut choices = vec![parse_sequence(input)?];
+            while input.peek(Token![/]) {
+                input.parse::<Token![/]>()?;
+                choices.push(parse_sequence(input)?);
+            }
+            if choices.len() == 1 {
+                Ok(choices.pop().unwrap())
+            } else {
+                Ok(Term::Choice(choices))
+            }
+        }
+
+        parse_choice(input)
     }
 }
 
@@ -94,61 +113,53 @@ impl Term {
             Term::Sequence(terms) => {
                 let expr = terms
                     .iter()
-                    .map(|t| t.generate_wrapped_code())
+                    .map(|t| t.generate_code())
                     .reduce(|x, y| quote! { #x && #y })
                     .unwrap();
                 quote! {
-                    let save = p.save();
-                    if #expr {
-                        true
-                    } else {
-                        p.restore(save);
-                        false
+                    {
+                        let save = p.save();
+                        if #expr {
+                            true
+                        } else {
+                            p.restore(save);
+                            false
+                        }
                     }
                 }
             }
             Term::Choice(terms) => terms
                 .iter()
-                .map(|t| t.generate_wrapped_code())
+                .map(|t| t.generate_code())
                 .reduce(|x, y| quote! { #x || #y })
                 .unwrap(),
-        }
-    }
-
-    fn generate_wrapped_code(&self) -> proc_macro2::TokenStream {
-        let code = self.generate_code();
-        match self {
-            Term::Sequence(_) | Term::Choice(_) => quote! {
-                { #code }
-            },
-            _ => code,
-        }
-    }
-}
-
-#[proc_macro]
-pub fn grammar_old(ts: TokenStream) -> TokenStream {
-    let token = ts.into_iter().next().expect("must have at least one token");
-    let result = match token {
-        proc_macro::TokenTree::Literal(literal) => {
-            let s = literal.to_string();
-            let c = s.chars().next().unwrap_or('\0');
-            match c {
-                '0'..'9' => {
-                    let val: usize = s.parse().unwrap();
-                    quote! { Some(crate::peg::Foo::Bar(#val)) }
+            Term::Optional(term) => {
+                let expr = term.generate_code();
+                quote! {
+                    (#expr || true)
                 }
-                '"' => {
-                    let inner = &s[1..s.len() - 1];
-                    quote! { Some(crate::peg::Foo::Baz(#inner.into())) }
+            }
+            Term::Star(term) => {
+                let expr = term.generate_code();
+                quote! {
+                    { while #expr {}; true }
                 }
-                _ => quote! { None },
+            }
+            Term::Plus(term) => {
+                let expr = term.generate_code();
+                quote! {
+                    {
+                        let mut closure = || #expr;
+                        if !closure() {
+                            return false;
+                        }
+                        while closure() {}
+                        true
+                    }
+                }
             }
         }
-        _ => quote! { None },
-    };
-
-    quote! { println!("Hello, world! {:?}", #result); }.into()
+    }
 }
 
 #[proc_macro]
