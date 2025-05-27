@@ -1,3 +1,5 @@
+use std::ops::RangeInclusive;
+
 pub struct ParseState {
     pub input: String,
     pub offset: usize,
@@ -33,6 +35,16 @@ impl ParseState {
             false
         }
     }
+
+    pub fn range(&mut self, r: RangeInclusive<char>) -> bool {
+        if let Some(next) = self.input[self.offset..].chars().next() {
+            if r.contains(&next) {
+                self.offset += next.len_utf8();
+                return true;
+            }
+        }
+        false
+    }
 }
 
 #[cfg(test)]
@@ -49,6 +61,10 @@ mod tests {
         option = "(" "x"? ")";
         plus = "(" "x"+ ")";
         star = "(" "x"* ")";
+
+        word_head = "_" / 'A'..'Z' / 'a'..'z';
+        word_tail = word_head / '0'..'9';
+        word = "(" word_head word_tail* ")";
     }
 
     fn parse<T: Fn(&mut ParseState) -> bool>(rule: T, s: &str) -> bool {
@@ -80,5 +96,13 @@ mod tests {
         assert!(!parse(option, many));
         assert!(parse(star, many));
         assert!(parse(plus, many));
+    }
+
+    #[test]
+    fn test_ranges() {
+        assert!(parse(word, "(_FooBar)"));
+        assert!(parse(word, "(abc123)"));
+        assert!(!parse(word, "(123abc)"));
+        assert!(!parse(word, "(foo-bar)"));
     }
 }

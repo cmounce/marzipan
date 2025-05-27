@@ -1,7 +1,9 @@
+use std::ops::RangeInclusive;
+
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{
-    Ident, LitStr, Token,
+    Ident, LitChar, LitStr, Token,
     parse::{Parse, ParseStream},
     parse_macro_input,
     punctuated::Punctuated,
@@ -20,10 +22,11 @@ enum Term {
     Choice(Vec<Term>),
     Literal(LitStr),
     Optional(Box<Term>),
+    Plus(Box<Term>),
+    Range(RangeInclusive<char>),
     Rule(Ident),
     Sequence(Vec<Term>),
     Star(Box<Term>),
-    Plus(Box<Term>),
 }
 
 impl Parse for Grammar {
@@ -45,12 +48,21 @@ impl Parse for Rule {
 
 impl Parse for Term {
     fn parse(input: ParseStream) -> syn::Result<Self> {
+        fn parse_range(input: ParseStream) -> syn::Result<Term> {
+            let start = input.parse::<LitChar>()?.value();
+            input.parse::<Token![..]>()?;
+            let end = input.parse::<LitChar>()?.value();
+            Ok(Term::Range(start..=end))
+        }
+
         fn parse_atom(input: ParseStream) -> syn::Result<Term> {
             let look = input.lookahead1();
             if look.peek(Ident) {
                 input.parse().map(Term::Rule)
             } else if look.peek(LitStr) {
                 input.parse().map(Term::Literal)
+            } else if look.peek(LitChar) {
+                parse_range(input)
             } else {
                 Err(look.error())
             }
@@ -74,7 +86,7 @@ impl Parse for Term {
 
         fn parse_sequence(input: ParseStream) -> syn::Result<Term> {
             let mut terms = vec![parse_repeat(input)?];
-            while input.peek(Ident) || input.peek(LitStr) {
+            while input.peek(Ident) || input.peek(LitStr) || input.peek(LitChar) {
                 terms.push(parse_repeat(input)?);
             }
             if terms.len() == 1 {
@@ -156,6 +168,12 @@ impl Term {
                         while closure() {}
                         true
                     }
+                }
+            }
+            Term::Range(range) => {
+                let (lo, hi) = (range.start(), range.end());
+                quote! {
+                    p.range(#lo..=#hi)
                 }
             }
         }
