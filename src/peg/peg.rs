@@ -64,7 +64,11 @@ mod tests {
 
         word_head = "_" / 'A'..'Z' / 'a'..'z';
         word_tail = word_head / '0'..'9';
-        word = "(" word_head word_tail* ")";
+        plain_word = word_head word_tail*;
+        word = "(" plain_word ")";
+
+        words = "(" (plain_word ("," plain_word)*)? ")";
+        nested_choice = "(" ("a" / "b") ("c" / "d") ")";
     }
 
     fn parse<T: Fn(&mut ParseState) -> bool>(rule: T, s: &str) -> bool {
@@ -104,5 +108,27 @@ mod tests {
         assert!(parse(word, "(abc123)"));
         assert!(!parse(word, "(123abc)"));
         assert!(!parse(word, "(foo-bar)"));
+    }
+
+    #[test]
+    fn test_groups() {
+        assert!(parse(words, "()"));
+        assert!(parse(words, "(foo)"));
+        assert!(parse(words, "(foo,bar,baz)"));
+        assert!(!parse(words, "(foo,)"));
+        assert!(!parse(words, "(,bar)"));
+        assert!(!parse(words, "(3baz)"));
+    }
+
+    #[test]
+    fn test_nested_choice() {
+        assert!(parse(nested_choice, "(ac)"));
+        assert!(parse(nested_choice, "(ad)"));
+        assert!(parse(nested_choice, "(bc)"));
+        assert!(parse(nested_choice, "(bd)"));
+        assert!(!parse(nested_choice, "(a)"));
+        assert!(!parse(nested_choice, "(b)"));
+        assert!(!parse(nested_choice, "(c)"));
+        assert!(!parse(nested_choice, "(d)"));
     }
 }

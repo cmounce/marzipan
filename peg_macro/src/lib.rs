@@ -3,7 +3,7 @@ use std::ops::RangeInclusive;
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{
-    Ident, LitChar, LitStr, Token,
+    Ident, LitChar, LitStr, Token, parenthesized,
     parse::{Parse, ParseStream},
     parse_macro_input,
     punctuated::Punctuated,
@@ -18,9 +18,10 @@ struct Rule {
     definition: Term,
 }
 
+#[derive(Debug)]
 enum Term {
     Choice(Vec<Term>),
-    Literal(LitStr),
+    Literal(String),
     Optional(Box<Term>),
     Plus(Box<Term>),
     Range(RangeInclusive<char>),
@@ -60,9 +61,13 @@ impl Parse for Term {
             if look.peek(Ident) {
                 input.parse().map(Term::Rule)
             } else if look.peek(LitStr) {
-                input.parse().map(Term::Literal)
+                input.parse::<LitStr>().map(|x| Term::Literal(x.value()))
             } else if look.peek(LitChar) {
                 parse_range(input)
+            } else if look.peek(syn::token::Paren) {
+                let content;
+                parenthesized!(content in input);
+                parse_choice(&content)
             } else {
                 Err(look.error())
             }
@@ -86,7 +91,7 @@ impl Parse for Term {
 
         fn parse_sequence(input: ParseStream) -> syn::Result<Term> {
             let mut terms = vec![parse_repeat(input)?];
-            while input.peek(Ident) || input.peek(LitStr) || input.peek(LitChar) {
+            while !input.is_empty() && !input.peek(Token![/]) && !input.peek(Token![;]) {
                 terms.push(parse_repeat(input)?);
             }
             if terms.len() == 1 {
@@ -140,15 +145,20 @@ impl Term {
                     }
                 }
             }
-            Term::Choice(terms) => terms
-                .iter()
-                .map(|t| t.generate_code())
-                .reduce(|x, y| quote! { #x || #y })
-                .unwrap(),
+            Term::Choice(terms) => {
+                let code = terms
+                    .iter()
+                    .map(|t| t.generate_code())
+                    .reduce(|x, y| quote! { #x || #y })
+                    .unwrap();
+                quote! {
+                    ( #code )
+                }
+            }
             Term::Optional(term) => {
                 let expr = term.generate_code();
                 quote! {
-                    (#expr || true)
+                    ( #expr || true )
                 }
             }
             Term::Star(term) => {
