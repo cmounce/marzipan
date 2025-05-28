@@ -45,6 +45,19 @@ impl ParseState {
         }
         false
     }
+
+    pub fn any(&mut self) -> bool {
+        if let Some(c) = self.input[self.offset..].chars().next() {
+            self.offset += c.len_utf8();
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn eoi(&self) -> bool {
+        self.offset >= self.input.len()
+    }
 }
 
 #[cfg(test)]
@@ -54,7 +67,7 @@ mod tests {
     use super::*;
 
     grammar! {
-        fake_csv = line "\n" line;
+        fake_csv = line "\n" line EOI;
         line = item "," item;
         item = "foo" / "bar";
 
@@ -69,11 +82,15 @@ mod tests {
 
         words = "(" (plain_word ("," plain_word)*)? ")";
         nested_choice = "(" ("a" / "b") ("c" / "d") ")";
+
+        dq = "\"";
+        quoted = dq ("\\" ANY / !dq ANY)* dq;
     }
 
     fn parse<T: Fn(&mut ParseState) -> bool>(rule: T, s: &str) -> bool {
+        println!("About to parse: {}", s);
         let mut p = ParseState::new(s);
-        rule(&mut p)
+        rule(&mut p) && p.eoi()
     }
 
     #[test]
@@ -81,6 +98,8 @@ mod tests {
         let mut p = ParseState::new("foo,bar\nbar,foo");
         assert!(fake_csv(&mut p));
         let mut p = ParseState::new("foo,foo\nfoo;foo");
+        assert!(!fake_csv(&mut p));
+        let mut p = ParseState::new("foo,foo\nfoo,foo\njunk at end");
         assert!(!fake_csv(&mut p));
     }
 
@@ -130,5 +149,18 @@ mod tests {
         assert!(!parse(nested_choice, "(b)"));
         assert!(!parse(nested_choice, "(c)"));
         assert!(!parse(nested_choice, "(d)"));
+    }
+
+    #[test]
+    fn test_quoted() {
+        assert!(parse(quoted, r#""""#));
+        assert!(parse(quoted, r#""foo""#));
+        assert!(parse(quoted, r#""\"""#));
+        assert!(parse(quoted, r#""foo \"bar\" baz""#));
+        assert!(parse(quoted, r#""C:\\>""#));
+
+        assert!(!parse(quoted, r#""no end"#));
+        assert!(!parse(quoted, r#""foo " bar""#));
+        assert!(!parse(quoted, r#""false end \""#));
     }
 }

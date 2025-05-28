@@ -1,5 +1,6 @@
 use std::ops::RangeInclusive;
 
+use kw::{ANY, EOI};
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{
@@ -20,14 +21,23 @@ struct Rule {
 
 #[derive(Debug)]
 enum Term {
+    AnyChar,
     Choice(Vec<Term>),
+    EOI,
     Literal(String),
+    NegLookahead(Box<Term>),
     Optional(Box<Term>),
     Plus(Box<Term>),
+    PosLookahead(Box<Term>),
     Range(RangeInclusive<char>),
     Rule(Ident),
     Sequence(Vec<Term>),
     Star(Box<Term>),
+}
+
+mod kw {
+    syn::custom_keyword!(ANY);
+    syn::custom_keyword!(EOI);
 }
 
 impl Parse for Grammar {
@@ -59,7 +69,13 @@ impl Parse for Term {
         fn parse_atom(input: ParseStream) -> syn::Result<Term> {
             let look = input.lookahead1();
             if look.peek(Ident) {
-                input.parse().map(Term::Rule)
+                if input.parse::<ANY>().is_ok() {
+                    Ok(Term::AnyChar)
+                } else if input.parse::<EOI>().is_ok() {
+                    Ok(Term::EOI)
+                } else {
+                    input.parse().map(Term::Rule)
+                }
             } else if look.peek(LitStr) {
                 input.parse::<LitStr>().map(|x| Term::Literal(x.value()))
             } else if look.peek(LitChar) {
@@ -89,10 +105,20 @@ impl Parse for Term {
             Ok(result)
         }
 
+        fn parse_lookahead(input: ParseStream) -> syn::Result<Term> {
+            if input.parse::<Token![!]>().is_ok() {
+                parse_repeat(input).map(|x| Term::NegLookahead(x.into()))
+            } else if input.parse::<Token![&]>().is_ok() {
+                parse_repeat(input).map(|x| Term::PosLookahead(x.into()))
+            } else {
+                parse_repeat(input)
+            }
+        }
+
         fn parse_sequence(input: ParseStream) -> syn::Result<Term> {
-            let mut terms = vec![parse_repeat(input)?];
+            let mut terms = vec![parse_lookahead(input)?];
             while !input.is_empty() && !input.peek(Token![/]) && !input.peek(Token![;]) {
-                terms.push(parse_repeat(input)?);
+                terms.push(parse_lookahead(input)?);
             }
             if terms.len() == 1 {
                 Ok(terms.pop().unwrap())
@@ -121,6 +147,12 @@ impl Parse for Term {
 impl Term {
     fn generate_code(&self) -> proc_macro2::TokenStream {
         match self {
+            Term::AnyChar => quote! {
+                p.any()
+            },
+            Term::EOI => quote! {
+                p.eoi()
+            },
             Term::Rule(ident) => quote! {
                 #ident(p)
             },
@@ -184,6 +216,34 @@ impl Term {
                 let (lo, hi) = (range.start(), range.end());
                 quote! {
                     p.range(#lo..=#hi)
+                }
+            }
+            Term::NegLookahead(term) => {
+                let code = term.generate_code();
+                quote! {
+                    {
+                        let save = p.save();
+                        if #code {
+                            p.restore(save);
+                            false
+                        } else {
+                            true
+                        }
+                    }
+                }
+            }
+            Term::PosLookahead(term) => {
+                let code = term.generate_code();
+                quote! {
+                    {
+                        let save = p.save();
+                        if #code {
+                            p.restore(save);
+                            true
+                        } else {
+                            false
+                        }
+                    }
                 }
             }
         }
