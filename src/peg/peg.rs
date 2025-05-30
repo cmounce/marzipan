@@ -36,9 +36,28 @@ impl ParseState {
         }
     }
 
+    pub fn literal_i(&mut self, s: &str) -> bool {
+        if self.input[self.offset..(self.offset + s.len())].eq_ignore_ascii_case(s) {
+            self.offset += s.len();
+            true
+        } else {
+            false
+        }
+    }
+
     pub fn range(&mut self, r: RangeInclusive<char>) -> bool {
         if let Some(next) = self.input[self.offset..].chars().next() {
             if r.contains(&next) {
+                self.offset += next.len_utf8();
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn range_i(&mut self, r: RangeInclusive<char>) -> bool {
+        if let Some(next) = self.input[self.offset..].chars().next() {
+            if r.contains(&next.to_ascii_lowercase()) || r.contains(&next.to_ascii_uppercase()) {
                 self.offset += next.len_utf8();
                 return true;
             }
@@ -85,6 +104,8 @@ mod tests {
 
         dq = "\"";
         quoted = dq ("\\" ANY / !dq ANY)* dq;
+
+        case_sensitivity = "Strict " ('a'..'z')+ ", loose "i ('a'..'z'i)+;
     }
 
     fn parse<T: Fn(&mut ParseState) -> bool>(rule: T, s: &str) -> bool {
@@ -162,5 +183,15 @@ mod tests {
         assert!(!parse(quoted, r#""no end"#));
         assert!(!parse(quoted, r#""foo " bar""#));
         assert!(!parse(quoted, r#""false end \""#));
+    }
+
+    #[test]
+    fn test_i_suffix() {
+        assert!(parse(case_sensitivity, "Strict abc, loose xyz"));
+        assert!(!parse(case_sensitivity, "STRICT abc, loose xyz"));
+        assert!(!parse(case_sensitivity, "Strict ABC, loose xyz"));
+        assert!(parse(case_sensitivity, "Strict abc, LOOSE xyz"));
+        assert!(parse(case_sensitivity, "Strict abc, loose XYZ"));
+        assert!(parse(case_sensitivity, "Strict abc, LoOsE XyZ"));
     }
 }

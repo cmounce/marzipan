@@ -25,11 +25,13 @@ enum Term {
     Choice(Vec<Term>),
     EOI,
     Literal(String),
+    LiteralI(String),
     NegLookahead(Box<Term>),
     Optional(Box<Term>),
     Plus(Box<Term>),
     PosLookahead(Box<Term>),
     Range(RangeInclusive<char>),
+    RangeI(RangeInclusive<char>),
     Rule(Ident),
     Sequence(Vec<Term>),
     Star(Box<Term>),
@@ -60,10 +62,15 @@ impl Parse for Rule {
 impl Parse for Term {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         fn parse_range(input: ParseStream) -> syn::Result<Term> {
-            let start = input.parse::<LitChar>()?.value();
+            let start_lit = input.parse::<LitChar>()?;
             input.parse::<Token![..]>()?;
-            let end = input.parse::<LitChar>()?.value();
-            Ok(Term::Range(start..=end))
+            let end_lit = input.parse::<LitChar>()?;
+            let range = start_lit.value()..=end_lit.value();
+            if end_lit.suffix() == "i" {
+                Ok(Term::RangeI(range))
+            } else {
+                Ok(Term::Range(range))
+            }
         }
 
         fn parse_atom(input: ParseStream) -> syn::Result<Term> {
@@ -77,7 +84,12 @@ impl Parse for Term {
                     input.parse().map(Term::Rule)
                 }
             } else if look.peek(LitStr) {
-                input.parse::<LitStr>().map(|x| Term::Literal(x.value()))
+                let lit = input.parse::<LitStr>()?;
+                if lit.suffix() == "i" {
+                    Ok(Term::LiteralI(lit.value()))
+                } else {
+                    Ok(Term::Literal(lit.value()))
+                }
             } else if look.peek(LitChar) {
                 parse_range(input)
             } else if look.peek(syn::token::Paren) {
@@ -159,6 +171,9 @@ impl Term {
             Term::Literal(lit_str) => quote! {
                 p.literal(#lit_str)
             },
+            Term::LiteralI(lit_str) => quote! {
+                p.literal_i(#lit_str)
+            },
             Term::Sequence(terms) => {
                 let expr = terms
                     .iter()
@@ -216,6 +231,12 @@ impl Term {
                 let (lo, hi) = (range.start(), range.end());
                 quote! {
                     p.range(#lo..=#hi)
+                }
+            }
+            Term::RangeI(range) => {
+                let (lo, hi) = (range.start(), range.end());
+                quote! {
+                    p.range_i(#lo..=#hi)
                 }
             }
             Term::NegLookahead(term) => {
