@@ -38,6 +38,7 @@ enum Term {
 mod kw {
     syn::custom_keyword!(ANY);
     syn::custom_keyword!(EOI);
+    syn::custom_keyword!(icase);
 }
 
 impl Parse for Grammar {
@@ -50,9 +51,23 @@ impl Parse for Grammar {
 
 impl Parse for Rule {
     fn parse(input: ParseStream) -> syn::Result<Self> {
+        let mut icase = false;
+        if input.parse::<Token![@]>().is_ok() {
+            let look = input.lookahead1();
+            if look.peek(kw::icase) {
+                input.parse::<kw::icase>()?;
+                icase = true;
+            } else {
+                return Err(look.error());
+            }
+        }
+
         let name = input.parse()?;
         input.parse::<Token![=]>()?;
-        let definition = input.parse()?;
+        let mut definition: Term = input.parse()?;
+        if icase {
+            definition.set_icase();
+        }
         Ok(Self { name, definition })
     }
 }
@@ -262,6 +277,25 @@ impl Term {
                     }
                 }
             }
+        }
+    }
+
+    fn set_icase(&mut self) {
+        match self {
+            Term::Literal(_, icase) | Term::Range(_, icase) => {
+                *icase = true;
+            }
+            Term::Choice(terms) | Term::Sequence(terms) => {
+                terms.iter_mut().for_each(|x| x.set_icase());
+            }
+            Term::NegLookahead(term)
+            | Term::Optional(term)
+            | Term::Plus(term)
+            | Term::PosLookahead(term)
+            | Term::Star(term) => {
+                term.set_icase();
+            }
+            Term::AnyChar | Term::EOI | Term::Rule(_) => {}
         }
     }
 }

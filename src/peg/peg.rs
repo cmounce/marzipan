@@ -106,6 +106,10 @@ mod tests {
         quoted = dq ("\\" ANY / !dq ANY)* dq;
 
         case_sensitivity = "Strict " ('a'..'z')+ ", loose "i ('a'..'z'i)+;
+
+        @icase
+        hex_config = "let " var_name " = 0x" ('a'..'f' / '0'..'9')+;
+        var_name = "foo" / "bar"; // case must match
     }
 
     fn parse<T: Fn(&mut ParseState) -> bool>(rule: T, s: &str) -> bool {
@@ -193,5 +197,13 @@ mod tests {
         assert!(parse(case_sensitivity, "Strict abc, LOOSE xyz"));
         assert!(parse(case_sensitivity, "Strict abc, loose XYZ"));
         assert!(parse(case_sensitivity, "Strict abc, LoOsE XyZ"));
+    }
+
+    #[test]
+    fn test_icase_decorator() {
+        assert!(parse(hex_config, "let foo = 0xc0ffee"));
+        assert!(parse(hex_config, "LET bar = 0XCAFE"));
+        assert!(!parse(hex_config, "let Foo = 0xc0ffee"));
+        assert!(!parse(hex_config, "let BAR = 0xcafe"));
     }
 }
