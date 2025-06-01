@@ -24,14 +24,12 @@ enum Term {
     AnyChar,
     Choice(Vec<Term>),
     EOI,
-    Literal(String),
-    LiteralI(String),
+    Literal(String, bool),
     NegLookahead(Box<Term>),
     Optional(Box<Term>),
     Plus(Box<Term>),
     PosLookahead(Box<Term>),
-    Range(RangeInclusive<char>),
-    RangeI(RangeInclusive<char>),
+    Range(RangeInclusive<char>, bool),
     Rule(Ident),
     Sequence(Vec<Term>),
     Star(Box<Term>),
@@ -66,11 +64,8 @@ impl Parse for Term {
             input.parse::<Token![..]>()?;
             let end_lit = input.parse::<LitChar>()?;
             let range = start_lit.value()..=end_lit.value();
-            if end_lit.suffix() == "i" {
-                Ok(Term::RangeI(range))
-            } else {
-                Ok(Term::Range(range))
-            }
+            let icase = end_lit.suffix() == "i";
+            Ok(Term::Range(range, icase))
         }
 
         fn parse_atom(input: ParseStream) -> syn::Result<Term> {
@@ -85,11 +80,8 @@ impl Parse for Term {
                 }
             } else if look.peek(LitStr) {
                 let lit = input.parse::<LitStr>()?;
-                if lit.suffix() == "i" {
-                    Ok(Term::LiteralI(lit.value()))
-                } else {
-                    Ok(Term::Literal(lit.value()))
-                }
+                let icase = lit.suffix() == "i";
+                Ok(Term::Literal(lit.value(), icase))
             } else if look.peek(LitChar) {
                 parse_range(input)
             } else if look.peek(syn::token::Paren) {
@@ -168,12 +160,16 @@ impl Term {
             Term::Rule(ident) => quote! {
                 #ident(p)
             },
-            Term::Literal(lit_str) => quote! {
-                p.literal(#lit_str)
-            },
-            Term::LiteralI(lit_str) => quote! {
-                p.literal_i(#lit_str)
-            },
+            Term::Literal(lit_str, icase) => {
+                let method = if *icase {
+                    quote! { literal_i }
+                } else {
+                    quote! { literal }
+                };
+                quote! {
+                    p.#method(#lit_str)
+                }
+            }
             Term::Sequence(terms) => {
                 let expr = terms
                     .iter()
@@ -227,16 +223,15 @@ impl Term {
                     }
                 }
             }
-            Term::Range(range) => {
+            Term::Range(range, icase) => {
                 let (lo, hi) = (range.start(), range.end());
+                let method = if *icase {
+                    quote! { range_i }
+                } else {
+                    quote! { range }
+                };
                 quote! {
-                    p.range(#lo..=#hi)
-                }
-            }
-            Term::RangeI(range) => {
-                let (lo, hi) = (range.start(), range.end());
-                quote! {
-                    p.range_i(#lo..=#hi)
+                    p.#method(#lo..=#hi)
                 }
             }
             Term::NegLookahead(term) => {
