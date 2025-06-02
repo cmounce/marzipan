@@ -1,19 +1,42 @@
-use std::ops::RangeInclusive;
+use std::{
+    num::NonZero,
+    ops::{Range, RangeInclusive},
+};
 
-pub struct ParseState {
+pub struct ParseState<T: Clone> {
     pub input: String,
     pub offset: usize,
+    captures: Vec<RawCapture<T>>,
 }
 
 pub struct Savepoint {
     offset: usize,
 }
 
-impl ParseState {
+pub struct Captures<'a, T: Clone> {
+    input: &'a str,
+    raw: &'a [RawCapture<T>],
+    index: usize,
+}
+
+pub struct Capture<'a, T: Clone> {
+    input: &'a str,
+    raw: &'a [RawCapture<T>],
+}
+
+#[derive(Debug)]
+struct RawCapture<T: Clone> {
+    kind: T,
+    span: Range<usize>,
+    subtree_len: Option<NonZero<usize>>,
+}
+
+impl<T: Clone> ParseState<T> {
     pub fn new(s: &str) -> Self {
         Self {
             input: s.into(),
             offset: 0,
+            captures: vec![],
         }
     }
 
@@ -77,6 +100,51 @@ impl ParseState {
     pub fn eoi(&self) -> bool {
         self.offset >= self.input.len()
     }
+
+    pub fn captures<'a>(&'a self) -> Captures<'a, T> {
+        Captures {
+            input: &self.input,
+            raw: &self.captures,
+            index: 0,
+        }
+    }
+}
+
+impl<'a, T: Clone> Iterator for Captures<'a, T> {
+    type Item = Capture<'a, T>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let head = self.raw.get(self.index)?;
+        let subtree_len = head.subtree_len.unwrap().get();
+        let subtree_slice = &self.raw[self.index..self.index + subtree_len];
+        self.index += subtree_len;
+        Some(Capture {
+            input: &self.input,
+            raw: subtree_slice,
+        })
+    }
+}
+
+impl<'a, T: Clone> Capture<'a, T> {
+    pub fn children(&self) -> Captures<'a, T> {
+        Captures {
+            input: &self.input,
+            raw: &self.raw[1..],
+            index: 0,
+        }
+    }
+
+    pub fn kind(&self) -> T {
+        self.raw[0].kind.clone()
+    }
+
+    pub fn span(&self) -> Range<usize> {
+        self.raw[0].span.clone()
+    }
+
+    pub fn text(&self) -> &'a str {
+        &self.input[self.span()]
+    }
 }
 
 #[cfg(test)]
@@ -112,7 +180,7 @@ mod tests {
         var_name = "foo" / "bar"; // case must match
     }
 
-    fn parse<T: Fn(&mut ParseState) -> bool>(rule: T, s: &str) -> bool {
+    fn parse<C: Clone, T: Fn(&mut ParseState<C>) -> bool>(rule: T, s: &str) -> bool {
         println!("About to parse: {}", s);
         let mut p = ParseState::new(s);
         rule(&mut p) && p.eoi()
