@@ -1,17 +1,9 @@
-use std::{
-    num::NonZero,
-    ops::{Range, RangeInclusive},
-};
+use std::{num::NonZero, ops::Range};
 
 pub struct ParseState<T: Clone> {
     pub input: String,
     pub offset: usize,
     captures: Vec<RawCapture<T>>,
-}
-
-pub struct Savepoint {
-    offset: usize,
-    captures_len: usize,
 }
 
 pub struct Captures<'a, T: Clone> {
@@ -41,93 +33,120 @@ impl<T: Clone> ParseState<T> {
         }
     }
 
-    pub fn save(&self) -> Savepoint {
-        Savepoint {
-            offset: self.offset,
-            captures_len: self.captures.len(),
-        }
-    }
-
-    pub fn restore(&mut self, save: Savepoint) {
-        self.offset = save.offset;
-        self.captures.truncate(save.captures_len);
-    }
-
-    pub fn literal(&mut self, s: &str) -> bool {
-        if self.input[self.offset..].starts_with(s) {
-            self.offset += s.len();
-            true
-        } else {
-            false
-        }
-    }
-
-    pub fn literal_i(&mut self, s: &str) -> bool {
-        if self.input[self.offset..(self.offset + s.len())].eq_ignore_ascii_case(s) {
-            self.offset += s.len();
-            true
-        } else {
-            false
-        }
-    }
-
-    pub fn range(&mut self, r: RangeInclusive<char>) -> bool {
-        if let Some(next) = self.input[self.offset..].chars().next() {
-            if r.contains(&next) {
-                self.offset += next.len_utf8();
-                return true;
-            }
-        }
-        false
-    }
-
-    pub fn range_i(&mut self, r: RangeInclusive<char>) -> bool {
-        if let Some(next) = self.input[self.offset..].chars().next() {
-            if r.contains(&next.to_ascii_lowercase()) || r.contains(&next.to_ascii_uppercase()) {
-                self.offset += next.len_utf8();
-                return true;
-            }
-        }
-        false
-    }
-
-    pub fn any(&mut self) -> bool {
-        if let Some(c) = self.input[self.offset..].chars().next() {
-            self.offset += c.len_utf8();
-            true
-        } else {
-            false
-        }
-    }
-
-    pub fn eoi(&self) -> bool {
-        self.offset >= self.input.len()
-    }
-
-    pub fn begin_capture(&mut self, tag: T) -> Savepoint {
-        let result = self.save();
-        self.captures.push(RawCapture {
-            kind: tag,
-            span: 0..0,
-            subtree_len: None,
-        });
-        result
-    }
-
-    pub fn commit_capture(&mut self, start: Savepoint) {
-        let index = start.captures_len;
-        assert_eq!(self.captures[index].subtree_len, None);
-
-        let subtree_len = self.captures.len() - index;
-        self.captures[index].span = start.offset..self.offset;
-        self.captures[index].subtree_len = NonZero::new(subtree_len);
-    }
-
     pub fn captures<'a>(&'a self) -> Captures<'a, T> {
         Captures {
             input: &self.input,
             raw: &self.captures,
             index: 0,
+        }
+    }
+}
+
+pub mod backend {
+    use std::{num::NonZero, ops::RangeInclusive};
+
+    use super::{ParseState, RawCapture};
+
+    pub struct Savepoint {
+        offset: usize,
+        captures_len: usize,
+    }
+
+    pub trait LowLevel<T: Clone> {
+        fn any(&mut self) -> bool;
+        fn begin_capture(&mut self, tag: T) -> Savepoint;
+        fn commit_capture(&mut self, start: Savepoint);
+        fn eoi(&self) -> bool;
+        fn literal(&mut self, s: &str) -> bool;
+        fn literal_i(&mut self, s: &str) -> bool;
+        fn range(&mut self, r: RangeInclusive<char>) -> bool;
+        fn range_i(&mut self, r: RangeInclusive<char>) -> bool;
+        fn restore(&mut self, save: Savepoint);
+        fn save(&self) -> Savepoint;
+    }
+
+    impl<T: Clone> LowLevel<T> for ParseState<T> {
+        fn any(&mut self) -> bool {
+            if let Some(c) = self.input[self.offset..].chars().next() {
+                self.offset += c.len_utf8();
+                true
+            } else {
+                false
+            }
+        }
+
+        fn begin_capture(&mut self, tag: T) -> Savepoint {
+            let result = self.save();
+            self.captures.push(RawCapture {
+                kind: tag,
+                span: 0..0,
+                subtree_len: None,
+            });
+            result
+        }
+
+        fn commit_capture(&mut self, start: Savepoint) {
+            let index = start.captures_len;
+            assert_eq!(self.captures[index].subtree_len, None);
+
+            let subtree_len = self.captures.len() - index;
+            self.captures[index].span = start.offset..self.offset;
+            self.captures[index].subtree_len = NonZero::new(subtree_len);
+        }
+
+        fn eoi(&self) -> bool {
+            self.offset >= self.input.len()
+        }
+
+        fn literal(&mut self, s: &str) -> bool {
+            if self.input[self.offset..].starts_with(s) {
+                self.offset += s.len();
+                true
+            } else {
+                false
+            }
+        }
+
+        fn literal_i(&mut self, s: &str) -> bool {
+            if self.input[self.offset..(self.offset + s.len())].eq_ignore_ascii_case(s) {
+                self.offset += s.len();
+                true
+            } else {
+                false
+            }
+        }
+
+        fn range(&mut self, r: RangeInclusive<char>) -> bool {
+            if let Some(next) = self.input[self.offset..].chars().next() {
+                if r.contains(&next) {
+                    self.offset += next.len_utf8();
+                    return true;
+                }
+            }
+            false
+        }
+
+        fn range_i(&mut self, r: RangeInclusive<char>) -> bool {
+            if let Some(next) = self.input[self.offset..].chars().next() {
+                if r.contains(&next.to_ascii_lowercase()) || r.contains(&next.to_ascii_uppercase())
+                {
+                    self.offset += next.len_utf8();
+                    return true;
+                }
+            }
+            false
+        }
+
+        fn restore(&mut self, save: Savepoint) {
+            self.offset = save.offset;
+            self.captures.truncate(save.captures_len);
+        }
+
+        fn save(&self) -> Savepoint {
+            Savepoint {
+                offset: self.offset,
+                captures_len: self.captures.len(),
+            }
         }
     }
 }
@@ -174,7 +193,7 @@ mod tests {
     use insta::assert_debug_snapshot;
     use peg_macro::grammar;
 
-    use super::*;
+    use super::ParseState;
 
     grammar! {
         fake_csv = line "\n" line EOI;
@@ -208,6 +227,7 @@ mod tests {
     }
 
     fn parse<C: Clone, T: Fn(&mut ParseState<C>) -> bool>(rule: T, s: &str) -> bool {
+        use super::backend::LowLevel;
         println!("About to parse: {}", s);
         let mut p = ParseState::new(s);
         rule(&mut p) && p.eoi()

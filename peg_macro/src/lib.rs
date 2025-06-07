@@ -379,6 +379,7 @@ pub fn grammar(ts: TokenStream) -> TokenStream {
             let generated = r.definition.generate_code();
             quote! {
                 fn #fn_name(p: &mut crate::peg::ParseState<Tag>) -> bool {
+                    use crate::peg::backend::LowLevel;
                     #generated
                 }
             }
