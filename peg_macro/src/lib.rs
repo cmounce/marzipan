@@ -367,7 +367,7 @@ pub fn grammar(ts: TokenStream) -> TokenStream {
         .collect();
     let enum_tag = quote! {
         #[derive(Copy, Clone, Debug)]
-        enum Tag {
+        pub enum Tag {
             #(#tag_idents),*
         }
     };
@@ -379,7 +379,7 @@ pub fn grammar(ts: TokenStream) -> TokenStream {
             let fn_name = &r.name;
             let generated = r.definition.generate_code();
             quote! {
-                fn #fn_name(p: &mut crate::peg::ParseState<Tag>) -> bool {
+                pub fn #fn_name(p: &mut crate::peg::ParseState<Tag>) -> bool {
                     use crate::peg::backend::LowLevel;
                     #generated
                 }

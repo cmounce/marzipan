@@ -1,4 +1,5 @@
 use crate::{
+    peg::ParseState,
     plus,
     preprocess::peg::{Alt, And, Dot, EOF, NoCase, Not, Opt, Parser, Rule, Tag},
     star,
@@ -6,6 +7,10 @@ use crate::{
 };
 
 pub fn print_labels(b: &Stat) {
+    let code = &b.code;
+    let mut ps = ParseState::new(code);
+    assert!(grammar::program(&mut ps), "New parser couldn't parse: {:?}", code);
+
     let mut parser = Parser::new(&b.code);
     if !program.parse(&mut parser) {
         eprintln!("Couldn't parse stat's code: {:?}", b.code);
@@ -16,6 +21,139 @@ pub fn print_labels(b: &Stat) {
         if capture.kind() == "label" {
             println!("- {}", capture.text());
         }
+    }
+}
+
+mod grammar {
+    use peg_macro::grammar;
+
+    grammar! {
+        program = (line ("\n" line)*)? EOI;
+        line = label_line / statement;
+        statement = movement+ command? / command / text;
+        movement = ("/" / "?") s direction;
+        text = !("#" / "/" / "?") (!"\n" ANY)*;
+
+        label_line = ":" label eol;
+
+        command = "#" bare_command;
+        bare_command = bare_compound_command / bare_simple_command;
+        @icase
+        bare_compound_command = (
+            ("give" / "take") sp counter sp value /
+            "if" sp condition /
+            "try" sp direction
+        ) s (statement / bare_command);
+        @icase
+        bare_simple_command = (
+            &'b'..'c' (
+                "become" sp kind /
+                "bind" sp word /
+                "change" sp kind sp kind /
+                "char" sp value /
+                "clear" sp word /
+                "cycle" sp value
+            ) /
+            &'d'..'l' (
+                "die" eow /
+                "end" "game"? eow /
+                "go" sp direction /
+                "idle" eow /
+                "lock" eow
+            ) /
+            &'p'..'s' (
+                "play" eow (!"\n" ANY)* /
+                "put" sp direction sp kind /
+                "restart" eow /
+                "restore" sp message /
+                "send" sp message /
+                "set" sp word /
+                "shoot" sp direction
+            ) /
+            &'t'..'z' (
+                "throwstar" sp direction /
+                "unlock" eow /
+                "walk" sp direction /
+                "zap" sp message
+            ) /
+            message // shorthand send
+        ) s eol; // note: this allows trailing (ignored) whitespace
+
+        //
+        //  Common definitions
+        //
+
+        // Color names
+        @icase
+        color = ("blue" / "green" / "cyan" / "red" / "purple" / "yellow" / "white") eow;
+
+        // Conditions
+        condition = ("not"i sp)* base_condition;
+        @icase
+        base_condition =
+            // These need `eow`/`sp` immediately after each literal because each one
+            // could potentially appear in a flag name as a prefix: `#set allignedxyz`
+            "alligned" eow /
+            "any" sp kind /
+            "blocked" sp direction /
+            "contact" eow /
+            "energized" eow /
+            word; // flag name
+
+        // Counter names
+        counter = ("ammo" / "gems" / "health" / "score" / "time" / "torches") eow;
+
+        // Directions
+        direction = (direction_modifier sp)* base_direction;
+        @icase
+        direction_modifier = ("cw" / "ccw" / "opp" / "rndp") eow;
+        @icase
+        base_direction = (
+            "flow" / "rnd" ("ne" / "ns")? / "seek" /        // dynamic
+            "north" / "south" / "east" / "west" / "idle" /  // long forms
+            "n" / "s" / "e" / "w" / "i"                     // short forms
+        ) eow;
+
+        // Labels (defined locations in the code)
+        // Examples: foo, namespace~foo, foo.local, .local, @
+        label = #Label:(namespace? (label_name / #Anon:"@"));
+        namespace = #Namespace:label_word "~";
+        label_name = label_local / label_global label_local?;
+        label_global = #Global:label_word;
+        label_local = "." #Local:label_word;
+        label_word = word_char+; // labels can start with 0-9
+
+        // Messages (references to labels)
+        // Examples: foo, all:namespace~bar.baz, @b, @f
+        message = #Message:(recipient? message_name);
+        recipient = #Recipient:word ":";
+        message_name = namespace? (label_name / #Anon:anon_message);
+        anon_message = "@" ("b" / "f");
+
+        // Tile kinds
+        kind = (color sp)? base_kind;
+        @icase
+        base_kind = (
+            &'a'..'b' ("ammo" / "bear" / "blinkwall" / "bomb" / "boulder" / "breakable" / "bullet") /
+            &'c'..'e' ("clockwise" / "counter" / "door" / "duplicator" / "empty" / "energizer") /
+            &'f'..'k' ("fake" / "forest" / "gem" / "head" / "invisible" / "key") /
+            &'l'..'o' ("line" / "lion" / "monitor" / "normal" / "object") /
+            &'p'..'r' ("passage" / "player" / "pusher" / "ricochet" / "ruffian") /
+            &"s" ("scroll" / "segment" / "shark" / "slider"("ew"/"ns") / "slime" / "solid" / "spinninggun" / "star") /
+            &'t'..'w' ("tiger" / "torch" / "transporter" / "water")
+        ) eow;
+
+        //
+        // Generic helpers
+        //
+
+        eol = &("\n" / EOI);
+        eow = !('a'..'z'i / '0'..'9' / "_");
+        s = " "*;
+        sp = " "+;
+        value = '0'..'9'+;
+        word = !'0'..'9' word_char+;
+        word_char = ('a'..'z'i / '0'..'9' / "_");
     }
 }
 
