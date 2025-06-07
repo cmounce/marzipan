@@ -108,7 +108,8 @@ pub mod backend {
         }
 
         fn literal_i(&mut self, s: &str) -> bool {
-            if self.input[self.offset..(self.offset + s.len())].eq_ignore_ascii_case(s) {
+            let range = self.offset..(self.offset + s.len());
+            if range.end <= self.input.len() && self.input[range].eq_ignore_ascii_case(s) {
                 self.offset += s.len();
                 true
             } else {
@@ -216,6 +217,7 @@ mod tests {
         quoted = dq ("\\" ANY / !dq ANY)* dq;
 
         case_sensitivity = "Strict " ('a'..'z')+ ", loose "i ('a'..'z'i)+;
+        long_icase_str = "foo bar baz"i;
 
         @icase
         hex_config = "let " var_name " = 0x" ('a'..'f' / '0'..'9')+;
@@ -320,6 +322,12 @@ mod tests {
         assert!(parse(hex_config, "LET bar = 0XCAFE"));
         assert!(!parse(hex_config, "let Foo = 0xc0ffee"));
         assert!(!parse(hex_config, "let BAR = 0xcafe"));
+    }
+
+    #[test]
+    fn test_icase_eoi() {
+        assert!(parse(long_icase_str, "FOO BAR BAZ"));
+        assert!(!parse(long_icase_str, "FOO BAR BA"));
     }
 
     #[test]
