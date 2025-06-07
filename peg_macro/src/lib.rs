@@ -2,6 +2,7 @@ use std::ops::RangeInclusive;
 
 use kw::{ANY, EOI};
 use proc_macro::TokenStream;
+use proc_macro2::Span;
 use quote::quote;
 use syn::{
     Ident, LitChar, LitStr, Token, parenthesized,
@@ -22,6 +23,7 @@ struct Rule {
 #[derive(Debug)]
 enum Term {
     AnyChar,
+    Capture(String, Box<Term>),
     Choice(Vec<Term>),
     EOI,
     Literal(String, bool),
@@ -124,20 +126,25 @@ impl Parse for Term {
             Ok(result)
         }
 
-        fn parse_lookahead(input: ParseStream) -> syn::Result<Term> {
+        fn parse_prefix(input: ParseStream) -> syn::Result<Term> {
             if input.parse::<Token![!]>().is_ok() {
                 parse_repeat(input).map(|x| Term::NegLookahead(x.into()))
             } else if input.parse::<Token![&]>().is_ok() {
                 parse_repeat(input).map(|x| Term::PosLookahead(x.into()))
+            } else if input.parse::<Token![#]>().is_ok() {
+                let tag: Ident = input.parse()?;
+                input.parse::<Token![:]>()?;
+                let expr = parse_repeat(input)?;
+                Ok(Term::Capture(tag.to_string(), expr.into()))
             } else {
                 parse_repeat(input)
             }
         }
 
         fn parse_sequence(input: ParseStream) -> syn::Result<Term> {
-            let mut terms = vec![parse_lookahead(input)?];
+            let mut terms = vec![parse_prefix(input)?];
             while !input.is_empty() && !input.peek(Token![/]) && !input.peek(Token![;]) {
-                terms.push(parse_lookahead(input)?);
+                terms.push(parse_prefix(input)?);
             }
             if terms.len() == 1 {
                 Ok(terms.pop().unwrap())
@@ -169,6 +176,22 @@ impl Term {
             Term::AnyChar => quote! {
                 p.any()
             },
+            Term::Capture(name, pat) => {
+                let tag = Ident::new(&name, Span::call_site());
+                let code = pat.generate_code();
+                quote! {
+                    {
+                        let save = p.begin_capture(Tag::#tag);
+                        if !#code {
+                            p.restore(save);
+                            false
+                        } else {
+                            p.commit_capture(save);
+                            true
+                        }
+                    }
+                }
+            }
             Term::EOI => quote! {
                 p.eoi()
             },
@@ -288,7 +311,8 @@ impl Term {
             Term::Choice(terms) | Term::Sequence(terms) => {
                 terms.iter_mut().for_each(|x| x.set_icase());
             }
-            Term::NegLookahead(term)
+            Term::Capture(_, term)
+            | Term::NegLookahead(term)
             | Term::Optional(term)
             | Term::Plus(term)
             | Term::PosLookahead(term)
@@ -298,11 +322,55 @@ impl Term {
             Term::AnyChar | Term::EOI | Term::Rule(_) => {}
         }
     }
+
+    fn get_capture_names(&self) -> Vec<&str> {
+        let mut result = vec![];
+        match self {
+            Term::AnyChar | Term::EOI | Term::Literal(_, _) | Term::Range(_, _) | Term::Rule(_) => {
+            }
+            Term::Capture(name, term) => {
+                result.push(name.as_str());
+                result.extend(term.get_capture_names());
+            }
+            Term::Choice(terms) | Term::Sequence(terms) => {
+                terms
+                    .iter()
+                    .for_each(|x| result.extend(x.get_capture_names()));
+            }
+            Term::NegLookahead(term)
+            | Term::Optional(term)
+            | Term::Plus(term)
+            | Term::PosLookahead(term)
+            | Term::Star(term) => {
+                result.extend(term.get_capture_names());
+            }
+        }
+        result
+    }
 }
 
 #[proc_macro]
 pub fn grammar(ts: TokenStream) -> TokenStream {
     let input = parse_macro_input!(ts as Grammar);
+
+    let mut capture_names: Vec<_> = input
+        .rules
+        .iter()
+        .flat_map(|r| r.definition.get_capture_names())
+        .collect();
+    capture_names.sort();
+    capture_names.dedup();
+    let tag_idents: Vec<Ident> = capture_names
+        .iter()
+        .map(|x| Ident::new(x, proc_macro2::Span::call_site()))
+        .collect();
+    let enum_tag = quote! {
+        #[derive(Copy, Clone, Debug)]
+        enum Tag {
+            #(#tag_idents),*
+        }
+    };
+
     let fns: Vec<_> = input
         .rules
         .iter()
@@ -310,13 +378,14 @@ pub fn grammar(ts: TokenStream) -> TokenStream {
             let fn_name = &r.name;
             let generated = r.definition.generate_code();
             quote! {
-                fn #fn_name(p: &mut crate::peg::ParseState<()>) -> bool {
+                fn #fn_name(p: &mut crate::peg::ParseState<Tag>) -> bool {
                     #generated
                 }
             }
         })
         .collect();
     quote! {
+        #enum_tag
         #(#fns)*
     }
     .into()

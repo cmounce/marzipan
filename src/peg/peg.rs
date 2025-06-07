@@ -11,6 +11,7 @@ pub struct ParseState<T: Clone> {
 
 pub struct Savepoint {
     offset: usize,
+    captures_len: usize,
 }
 
 pub struct Captures<'a, T: Clone> {
@@ -43,11 +44,13 @@ impl<T: Clone> ParseState<T> {
     pub fn save(&self) -> Savepoint {
         Savepoint {
             offset: self.offset,
+            captures_len: self.captures.len(),
         }
     }
 
     pub fn restore(&mut self, save: Savepoint) {
         self.offset = save.offset;
+        self.captures.truncate(save.captures_len);
     }
 
     pub fn literal(&mut self, s: &str) -> bool {
@@ -101,6 +104,25 @@ impl<T: Clone> ParseState<T> {
         self.offset >= self.input.len()
     }
 
+    pub fn begin_capture(&mut self, tag: T) -> Savepoint {
+        let result = self.save();
+        self.captures.push(RawCapture {
+            kind: tag,
+            span: 0..0,
+            subtree_len: None,
+        });
+        result
+    }
+
+    pub fn commit_capture(&mut self, start: Savepoint) {
+        let index = start.captures_len;
+        assert_eq!(self.captures[index].subtree_len, None);
+
+        let subtree_len = self.captures.len() - index;
+        self.captures[index].span = start.offset..self.offset;
+        self.captures[index].subtree_len = NonZero::new(subtree_len);
+    }
+
     pub fn captures<'a>(&'a self) -> Captures<'a, T> {
         Captures {
             input: &self.input,
@@ -149,6 +171,7 @@ impl<'a, T: Clone> Capture<'a, T> {
 
 #[cfg(test)]
 mod tests {
+    use insta::assert_debug_snapshot;
     use peg_macro::grammar;
 
     use super::*;
@@ -178,6 +201,10 @@ mod tests {
         @icase
         hex_config = "let " var_name " = 0x" ('a'..'f' / '0'..'9')+;
         var_name = "foo" / "bar"; // case must match
+
+        email = #Email:(#User:user "@" #Domain:domain);
+        user = ('a'..'z'i)+;
+        domain = user+ ("." user)+;
     }
 
     fn parse<C: Clone, T: Fn(&mut ParseState<C>) -> bool>(rule: T, s: &str) -> bool {
@@ -273,5 +300,34 @@ mod tests {
         assert!(parse(hex_config, "LET bar = 0XCAFE"));
         assert!(!parse(hex_config, "let Foo = 0xc0ffee"));
         assert!(!parse(hex_config, "let BAR = 0xcafe"));
+    }
+
+    #[test]
+    fn test_captures() {
+        let mut p = ParseState::new("alice@example.com");
+        assert!(email(&mut p));
+        let mut captures = vec![];
+        for email in p.captures() {
+            captures.push((email.kind(), email.text()));
+            for part in email.children() {
+                captures.push((part.kind(), part.text()));
+            }
+        }
+        assert_debug_snapshot!(captures, @r#"
+        [
+            (
+                Email,
+                "alice@example.com",
+            ),
+            (
+                User,
+                "alice",
+            ),
+            (
+                Domain,
+                "example.com",
+            ),
+        ]
+        "#);
     }
 }
