@@ -253,11 +253,12 @@ impl Term {
                 quote! {
                     {
                         let mut closure = || #expr;
-                        if !closure() {
-                            return false;
+                        if closure() {
+                            while closure() {}
+                            true
+                        } else {
+                            false
                         }
-                        while closure() {}
-                        true
                     }
                 }
             }
