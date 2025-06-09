@@ -9,7 +9,11 @@ use crate::{
 pub fn print_labels(b: &Stat) {
     let code = &b.code;
     let mut ps = ParseState::new(code);
-    assert!(grammar::program(&mut ps), "New parser couldn't parse: {:?}", code);
+    assert!(
+        grammar::program(&mut ps),
+        "New parser couldn't parse: {:?}",
+        code
+    );
 
     let mut parser = Parser::new(&b.code);
     if !program.parse(&mut parser) {
@@ -29,8 +33,8 @@ mod grammar {
 
     grammar! {
         program = (line ("\n" line)*)? EOI;
-        line = label_line / statement;
-        statement = movement+ command? / command / text;
+        line = label_line / statement / text;
+        statement = movement+ command? / command;
         movement = ("/" / "?") s direction;
         text = !("#" / "/" / "?") (!"\n" ANY)*;
 
@@ -367,85 +371,70 @@ fn ww() -> impl Rule {
 mod test {
     use std::fs;
 
-    use insta::{assert_debug_snapshot, assert_snapshot};
+    use insta::assert_snapshot;
 
-    use crate::preprocess::peg::Ref;
+    use crate::peg::ParseState;
 
-    use super::*;
+    use super::{grammar::Tag, *};
 
-    fn parse<T: Rule>(rule: &T, input: &str) {
-        let mut p = Parser::new(input);
-        let rule = (Ref(rule), EOF);
-        assert!(rule.parse(&mut p));
+    fn parse<T: Clone, F: Fn(&mut ParseState<T>) -> bool>(rule: F, input: &str) {
+        use crate::peg::backend::LowLevel;
+        let mut p = ParseState::new(input);
+        assert!(rule(&mut p));
+        assert!(p.eoi());
     }
 
-    fn parse_err<T: Rule>(rule: &T, input: &str) {
-        let mut p = Parser::new(input);
-        let rule = (Ref(rule), EOF);
-        assert!(!rule.parse(&mut p));
+    fn parse_err<T: Clone, F: Fn(&mut ParseState<T>) -> bool>(rule: F, input: &str) {
+        use crate::peg::backend::LowLevel;
+        let mut p = ParseState::new(input);
+        assert!(!rule(&mut p) || !p.eoi());
     }
 
     #[test]
-    fn test_label_name() {
-        parse(&label_name, "foo");
-        parse(&label_name, ".loop");
-        parse(&label_name, "foo.loop");
-        parse(&label_name, "ns~foo");
-        parse(&label_name, "ns~.loop");
+    fn test_label() {
+        parse(grammar::label, "foo");
+        parse(grammar::label, ".loop");
+        parse(grammar::label, "foo.loop");
+        parse(grammar::label, "ns~foo");
+        parse(grammar::label, "ns~.loop");
 
-        parse_err(&label_name, "foo.");
-        parse_err(&label_name, "foo.bar.baz");
-        parse_err(&label_name, "foo~bar~baz");
-        parse_err(&label_name, "~foo");
+        parse_err(grammar::label, "foo.");
+        parse_err(grammar::label, "foo.bar.baz");
+        parse_err(grammar::label, "foo~bar~baz");
+        parse_err(grammar::label, "~foo");
     }
 
     #[test]
     fn test_direction() {
-        parse(&direction, "n");
-        parse(&direction, "north");
-        parse(&direction, "rndp rndne");
-        parse(&direction, "opp   seek");
-        parse(&direction, "cw cw cw flow");
+        parse(grammar::direction, "n");
+        parse(grammar::direction, "north");
+        parse(grammar::direction, "rndp rndne");
+        parse(grammar::direction, "opp   seek");
+        parse(grammar::direction, "cw cw cw flow");
     }
 
     #[test]
     fn test_condition() {
-        parse(&condition, "alligned");
-        parse(&condition, "blocked seek");
-        parse(&condition, "not blocked rndp seek");
-        parse(&condition, "any red lion");
-        parse(&condition, "any bear");
-    }
-
-    #[test]
-    fn test_references() {
-        let mut p = Parser::new("#send foo");
-        assert!(program.parse(&mut p));
-        let result: Vec<_> = p
-            .iter()
-            .filter(|x| x.kind() == "ref")
-            .map(|x| x.text())
-            .collect();
-        assert_debug_snapshot!(result, @r#"
-        [
-            "foo",
-        ]
-        "#);
+        parse(grammar::condition, "alligned");
+        parse(grammar::condition, "blocked seek");
+        parse(grammar::condition, "not blocked rndp seek");
+        parse(grammar::condition, "any red lion");
+        parse(grammar::condition, "any bear");
     }
 
     #[test]
     fn test_label_detection() {
         let input = fs::read_to_string("tests/labels/find-all.txt").unwrap();
-        let mut parser = Parser::new(&input);
-        assert!(program.parse(&mut parser));
+        let mut parser = ParseState::new(&input);
+        assert!(grammar::program(&mut parser));
 
         let mut result = String::new();
         let mut last_index = 0;
-        for group in parser.iter() {
+        for group in parser.captures() {
             let before = &input[last_index..group.span().start];
             let inner = match group.kind() {
-                "label" => format!("({})", group.text()),
-                "ref" => format!("[{}]", group.text()),
+                Tag::Label => format!("({})", group.text()),
+                Tag::Message => format!("[{}]", group.text()),
                 _ => group.text().into(),
             };
             result.push_str(before);

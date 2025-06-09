@@ -2,8 +2,25 @@
 source: src/labels/labels.rs
 expression: result
 ---
+'
 'Find all the labels and their references
+'
+'Examples of labels
 :(foo)
+:(namespace~foo)
+:(.local)
+:(@)
+'
+'Test sends
 #send [foo]
+#send [self:foo]
+#[self:foo]
+#[@b]
+#[.local]
+#[foo.local]
+'
+'Test conditional sends
 #if blocked n #send [foo]
-#if bar [foo]
+#if blocked s #[foo]
+#if blocked e send [foo]
+#if blocked w [foo]
