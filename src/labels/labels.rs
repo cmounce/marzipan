@@ -1,28 +1,16 @@
-use crate::{
-    peg::ParseState,
-    plus,
-    preprocess::peg::{Alt, And, Dot, EOF, NoCase, Not, Opt, Parser, Rule, Tag},
-    star,
-    world::Stat,
-};
+use crate::{peg::ParseState, world::Stat};
 
 pub fn print_labels(b: &Stat) {
     let code = &b.code;
-    let mut ps = ParseState::new(code);
+    let mut parser = ParseState::new(code);
     assert!(
-        grammar::program(&mut ps),
-        "New parser couldn't parse: {:?}",
+        grammar::program(&mut parser),
+        "Couldn't parse code: {:?}",
         code
     );
 
-    let mut parser = Parser::new(&b.code);
-    if !program.parse(&mut parser) {
-        eprintln!("Couldn't parse stat's code: {:?}", b.code);
-        return;
-    }
-
-    for capture in parser.iter() {
-        if capture.kind() == "label" {
+    for capture in parser.captures() {
+        if capture.kind() == grammar::Tag::Label {
             println!("- {}", capture.text());
         }
     }
@@ -47,7 +35,7 @@ mod grammar {
             ("give" / "take") sp counter sp value /
             "if" sp condition /
             "try" sp direction
-        ) s (statement / bare_command);
+        ) s (statement / bare_command / eol);
         @icase
         bare_simple_command = (
             &'b'..'c' (
@@ -159,212 +147,6 @@ mod grammar {
         word = !'0'..'9' word_char+;
         word_char = ('a'..'z'i / '0'..'9' / "_");
     }
-}
-
-fn program() -> impl Rule {
-    (Opt((line, star!(("\n", line)))), EOF)
-}
-
-fn line() -> impl Rule {
-    (motion_prefix, Alt((command_line, label_line, any_line)))
-}
-
-fn motion_prefix() -> impl Rule {
-    star!(Alt(("/", "?")), w, direction)
-}
-
-fn command_line() -> impl Rule {
-    ("#", w, bare_command)
-}
-
-fn bare_command() -> impl Rule {
-    Alt((bare_if, bare_send))
-}
-
-fn bare_if() -> impl Rule {
-    (
-        "if",
-        w,
-        condition,
-        w,
-        Opt(("then", w)),
-        Alt((shorthand_send, Box::new(line) as Box<dyn Rule>)),
-    )
-}
-
-/// `send` without a preceding `#`
-fn bare_send() -> impl Rule {
-    (NoCase("send"), ww, label_reference, w, eol)
-}
-
-/// `send` without a send keyword
-fn shorthand_send() -> impl Rule {
-    let af = (
-        And('a'..='f'),
-        Alt((
-            "become", "bind", "change", "char", "clear", "cycle", "die", "end", "endgame",
-        )),
-    );
-    let gr = (
-        And('g'..='r'),
-        Alt((
-            "go", "idle", "if", "lock", "play", "put", "restart", "restore",
-        )),
-    );
-    let sz = (
-        And('s'..='z'),
-        Alt((
-            "send",
-            "set",
-            "shoot",
-            "take",
-            "throwstar",
-            "try",
-            "unlock",
-            "walk",
-            "zap",
-        )),
-    );
-    let command = Alt((af, gr, sz));
-    (Not(command), label_reference, w, eol)
-}
-
-fn any_line() -> impl Rule {
-    (star!(Not("\n"), Dot), eol)
-}
-
-fn label_line() -> impl Rule {
-    (":", Tag("label", label_name), eol)
-}
-
-fn tile_kind() -> impl Rule {
-    (Opt((tile_color, ww)), tile_base_kind)
-}
-
-fn tile_color() -> impl Rule {
-    (
-        Alt(("blue", "green", "cyan", "red", "purple", "yellow", "white")),
-        Not('a'..='z'),
-    )
-}
-
-fn tile_base_kind() -> impl Rule {
-    let ac = (
-        And('a'..='c'),
-        Alt((
-            "ammo",
-            "bear",
-            "blinkwall",
-            "bomb",
-            "boulder",
-            "breakable",
-            "bullet",
-            "clockwise",
-            "counter",
-        )),
-    );
-    let dk = (
-        And('d'..='k'),
-        Alt((
-            "door",
-            "duplicator",
-            "empty",
-            "energizer",
-            "fake",
-            "forest",
-            "gem",
-            "head",
-            "invisible",
-            "key",
-        )),
-    );
-    let lr = (
-        And('l'..='r'),
-        Alt((
-            "line", "lion", "monitor", "normal", "object", "passage", "player", "pusher",
-            "ricochet", "ruffian",
-        )),
-    );
-    let s = (
-        And("s"),
-        Alt((
-            "scroll",
-            "segment",
-            "shark",
-            "sliderew",
-            "sliderns",
-            "slime",
-            "solid",
-            "spinninggun",
-            "star",
-        )),
-    );
-    let tz = (
-        And('t'..='z'),
-        Alt(("tiger", "torch", "transporter", "water")),
-    );
-    Alt((ac, dk, lr, s, tz))
-}
-
-fn condition() -> impl Rule {
-    let base = Alt((
-        "alligned",
-        ("any", ww, tile_kind),
-        ("blocked", ww, direction),
-        "contact",
-        "energized",
-        ('a'..='z', star!(word_char)),
-    ));
-    (star!("not", ww), base)
-}
-
-fn direction() -> impl Rule {
-    let modifier = Alt(("cw", "ccw", "rndp", "opp"));
-    (star!(modifier, ww), base_direction, Not('a'..='z'))
-}
-
-fn base_direction() -> impl Rule {
-    // Some directions are prefixes of others, which can break parsing.
-    // To prevent this, we roughly order the strings from longest to shortest.
-    let dynamic = Alt(("flow", "rndne", "rndns", "rnd", "seek"));
-    let long = Alt(("north", "south", "east", "west", "idle"));
-    let short = Alt(("n", "s", "e", "w", "i"));
-    (Alt((dynamic, long, short)), Not('a'..='z'))
-}
-
-fn label_name() -> impl Rule {
-    let namespace = (plus!(word_char), "~");
-    (
-        Opt(namespace),
-        star!(word_char),
-        Opt((".", plus!(word_char))),
-    )
-}
-
-fn label_reference() -> impl Rule {
-    Tag(
-        "ref",
-        (
-            Opt((Tag("dest", plus!(word_char)), ":")),
-            Tag("name", label_name),
-        ),
-    )
-}
-
-fn word_char() -> impl Rule {
-    Alt(('A'..='Z', 'a'..='z', '0'..='9', "_"))
-}
-
-fn eol() -> impl Rule {
-    Alt((And("\n"), EOF))
-}
-
-fn w() -> impl Rule {
-    star!(" ")
-}
-
-fn ww() -> impl Rule {
-    plus!(" ")
 }
 
 #[cfg(test)]

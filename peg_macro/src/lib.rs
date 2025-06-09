@@ -366,7 +366,7 @@ pub fn grammar(ts: TokenStream) -> TokenStream {
         .map(|x| Ident::new(x, proc_macro2::Span::call_site()))
         .collect();
     let enum_tag = quote! {
-        #[derive(Copy, Clone, Debug)]
+        #[derive(Copy, Clone, Debug, Eq, PartialEq)]
         pub enum Tag {
             #(#tag_idents),*
         }
