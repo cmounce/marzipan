@@ -15,10 +15,11 @@ enum Chunk {
     Reference(LabelName),
 }
 
-struct LabelName {
-    namespace: CompactString,
-    name: CompactString,
-    local: Option<CompactString>,
+#[derive(Clone, Debug)]
+pub struct LabelName {
+    pub namespace: Option<CompactString>,
+    pub name: CompactString,
+    pub local: Option<CompactString>,
 }
 
 fn parse_stat_labels(stat: &Stat) -> ParsedStat {
@@ -40,14 +41,14 @@ fn parse_stat_labels(stat: &Stat) -> ParsedStat {
             result.push(Chunk::Verbatim(code[offset..start].into()))
         }
         let mut label = LabelName {
-            namespace: CompactString::with_capacity(0),
+            namespace: None,
             name: CompactString::with_capacity(0),
             local: None,
         };
         for child in cap.children() {
             match child.kind() {
                 Tag::Namespace => {
-                    label.namespace = child.text().into();
+                    label.namespace = Some(child.text().into());
                 }
                 Tag::Global => {
                     label.name = child.text().into();
