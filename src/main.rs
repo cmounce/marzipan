@@ -5,7 +5,7 @@ mod preprocess;
 mod world;
 
 use anyhow::anyhow;
-use labels::labels::print_labels;
+use labels::parse::print_labels;
 use preprocess::eval::Context;
 use std::{env, error::Error, fs, path::PathBuf, process::exit};
 use world::World;

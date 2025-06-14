@@ -1,5 +1,5 @@
 ---
-source: src/labels/labels.rs
+source: src/labels/parse.rs
 expression: result
 ---
 '

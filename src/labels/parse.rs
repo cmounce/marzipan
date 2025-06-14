@@ -1,4 +1,85 @@
-use crate::{peg::ParseState, world::Stat};
+use std::ops::Range;
+
+use compact_str::CompactString;
+use grammar::Tag;
+
+use crate::{
+    peg::{Capture, ParseState},
+    world::Stat,
+};
+
+type ParsedStat = Vec<Chunk>;
+enum Chunk {
+    Verbatim(String),
+    Label(LabelName),
+    Reference(LabelName),
+}
+
+struct LabelName {
+    namespace: CompactString,
+    name: CompactString,
+    local: Option<CompactString>,
+}
+
+fn parse_stat_labels(stat: &Stat) -> ParsedStat {
+    let code = &stat.code;
+    let mut parser = ParseState::new(code);
+    assert!(
+        grammar::program(&mut parser),
+        "Couldn't parse code: {:?}",
+        code
+    );
+
+    // Split code along capture group boundaries
+    let mut result = vec![];
+    let mut offset = 0;
+
+    let mut push_label = |cap: Capture<_>| {
+        let Range { start, end } = cap.span();
+        if offset < start {
+            result.push(Chunk::Verbatim(code[offset..start].into()))
+        }
+        let mut label = LabelName {
+            namespace: CompactString::with_capacity(0),
+            name: CompactString::with_capacity(0),
+            local: None,
+        };
+        for child in cap.children() {
+            match child.kind() {
+                Tag::Namespace => {
+                    label.namespace = child.text().into();
+                }
+                Tag::Global => {
+                    label.name = child.text().into();
+                }
+                Tag::Local => label.local = Some(child.text().into()),
+                _ => unimplemented!(),
+            }
+        }
+        result.push(Chunk::Label(label));
+        offset = end;
+    };
+
+    for cap in parser.captures() {
+        match cap.kind() {
+            Tag::Label => {
+                push_label(cap);
+            }
+            Tag::Reference => {
+                for child in cap.children() {
+                    if child.kind() == Tag::Label {
+                        push_label(child);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    if offset < code.len() {
+        result.push(Chunk::Verbatim(code[offset..code.len()].into()));
+    }
+    result
+}
 
 pub fn print_labels(b: &Stat) {
     let code = &b.code;
@@ -10,7 +91,7 @@ pub fn print_labels(b: &Stat) {
     );
 
     for capture in parser.captures() {
-        if capture.kind() == grammar::Tag::Label {
+        if capture.kind() == Tag::Label {
             println!("- {}", capture.text());
         }
     }
@@ -106,7 +187,7 @@ mod grammar {
             "n" / "s" / "e" / "w" / "i"                     // short forms
         ) eow;
 
-        // Labels (defined locations in the code)
+        // Labels
         // Examples: foo, namespace~foo, foo.local, .local, @
         label = #Label:(namespace? (label_name / #Anon:"@"));
         namespace = #Namespace:label_word "~";
@@ -115,9 +196,9 @@ mod grammar {
         label_local = "." #Local:label_word;
         label_word = word_char+; // labels can start with 0-9
 
-        // Messages (references to labels)
+        // References to labels
         // Examples: foo, all:namespace~bar.baz, @b, @f
-        message = #Message:(recipient? message_name);
+        message = #Reference:(recipient? #Label:message_name);
         recipient = #Recipient:word ":";
         message_name = namespace? (label_name / #Anon:anon_message);
         anon_message = "@" ("b" / "f");
@@ -216,7 +297,7 @@ mod test {
             let before = &input[last_index..group.span().start];
             let inner = match group.kind() {
                 Tag::Label => format!("({})", group.text()),
-                Tag::Message => format!("[{}]", group.text()),
+                Tag::Reference => format!("[{}]", group.text()),
                 _ => group.text().into(),
             };
             result.push_str(before);
