@@ -10,6 +10,7 @@ pub struct Captures<'a, T: Clone> {
     input: &'a str,
     raw: &'a [RawCapture<T>],
     index: usize,
+    walk: bool,
 }
 
 pub struct Capture<'a, T: Clone> {
@@ -38,7 +39,14 @@ impl<T: Clone> ParseState<T> {
             input: &self.input,
             raw: &self.captures,
             index: 0,
+            walk: false,
         }
+    }
+
+    pub fn walk_captures<'a>(&'a self) -> Captures<'a, T> {
+        let mut result = self.captures();
+        result.walk = true;
+        result
     }
 }
 
@@ -159,7 +167,7 @@ impl<'a, T: Clone> Iterator for Captures<'a, T> {
         let head = self.raw.get(self.index)?;
         let subtree_len = head.subtree_len.unwrap().get();
         let subtree_slice = &self.raw[self.index..self.index + subtree_len];
-        self.index += subtree_len;
+        self.index += if self.walk { 1 } else { subtree_len };
         Some(Capture {
             input: &self.input,
             raw: subtree_slice,
@@ -173,7 +181,14 @@ impl<'a, T: Clone> Capture<'a, T> {
             input: &self.input,
             raw: &self.raw[1..],
             index: 0,
+            walk: false,
         }
+    }
+
+    pub fn walk_children(&self) -> Captures<'a, T> {
+        let mut result = self.children();
+        result.walk = true;
+        result
     }
 
     pub fn kind(&self) -> T {
@@ -223,6 +238,7 @@ mod tests {
         hex_config = "let " var_name " = 0x" ('a'..'f' / '0'..'9')+;
         var_name = "foo" / "bar"; // case must match
 
+        email_text = (!email ANY / email)*;
         email = #Email:(#User:user "@" #Domain:domain);
         user = ('a'..'z'i)+;
         domain = user+ ("." user)+;
@@ -355,6 +371,37 @@ mod tests {
                 Domain,
                 "example.com",
             ),
+        ]
+        "#);
+    }
+
+    #[test]
+    fn test_walk_captures() {
+        let mut p = ParseState::new("Contact alice@foo.com or bob@bar.net.");
+        assert!(email_text(&mut p));
+        let extract_by_tag = |tag| {
+            p.walk_captures()
+                .filter_map(|c| {
+                    if c.kind() == tag {
+                        Some(c.text())
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>()
+        };
+        let users = extract_by_tag(Tag::User);
+        let domains = extract_by_tag(Tag::Domain);
+        assert_debug_snapshot!(users, @r#"
+        [
+            "alice",
+            "bob",
+        ]
+        "#);
+        assert_debug_snapshot!(domains, @r#"
+        [
+            "foo.com",
+            "bar.net",
         ]
         "#);
     }
