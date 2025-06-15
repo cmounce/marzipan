@@ -5,7 +5,7 @@ mod preprocess;
 mod world;
 
 use anyhow::anyhow;
-use labels::parse::print_labels;
+use labels::{parse::print_labels, process::process_labels};
 use preprocess::eval::Context;
 use std::{env, error::Error, fs, path::PathBuf, process::exit};
 use world::World;
@@ -53,6 +53,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         for stat in &board.stats {
             print_labels(stat);
         }
+    }
+
+    for mut board in &mut world.boards {
+        process_labels(&mut board);
     }
 
     // Try to write a modified world file

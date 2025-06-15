@@ -8,8 +8,8 @@ use crate::{
     world::Stat,
 };
 
-type ParsedStat = Vec<Chunk>;
-enum Chunk {
+pub type ParsedStat = Vec<Chunk>;
+pub enum Chunk {
     Verbatim(String),
     Label(LabelName),
     Reference(LabelName),
@@ -22,7 +22,7 @@ pub struct LabelName {
     pub local: Option<CompactString>,
 }
 
-fn parse_stat_labels(stat: &Stat) -> ParsedStat {
+pub fn parse_stat_labels(stat: &Stat) -> ParsedStat {
     let code = &stat.code;
     let mut parser = ParseState::new(code);
     assert!(
