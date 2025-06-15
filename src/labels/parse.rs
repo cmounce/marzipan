@@ -3,10 +3,7 @@ use std::ops::Range;
 use compact_str::CompactString;
 use grammar::Tag;
 
-use crate::{
-    peg::{Capture, ParseState},
-    world::Stat,
-};
+use crate::{peg::ParseState, world::Stat};
 
 pub type ParsedStat = Vec<Chunk>;
 pub enum Chunk {
@@ -15,7 +12,7 @@ pub enum Chunk {
     Reference(LabelName),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct LabelName {
     pub namespace: Option<CompactString>,
     pub name: CompactString,
@@ -31,53 +28,55 @@ pub fn parse_stat_labels(stat: &Stat) -> ParsedStat {
         code
     );
 
-    // Split code along capture group boundaries
-    let mut result = vec![];
-    let mut offset = 0;
-
-    let mut push_label = |cap: Capture<_>| {
-        let Range { start, end } = cap.span();
-        if offset < start {
-            result.push(Chunk::Verbatim(code[offset..start].into()))
-        }
-        let mut label = LabelName {
-            namespace: None,
-            name: CompactString::with_capacity(0),
-            local: None,
-        };
-        for child in cap.children() {
-            match child.kind() {
-                Tag::Namespace => {
-                    label.namespace = Some(child.text().into());
-                }
-                Tag::Global => {
-                    label.name = child.text().into();
-                }
-                Tag::Local => label.local = Some(child.text().into()),
-                _ => unimplemented!(),
-            }
-        }
-        result.push(Chunk::Label(label));
-        offset = end;
-    };
-
+    // Find all #Label captures and record which ones were references
+    let mut label_captures = vec![];
     for cap in parser.captures() {
         match cap.kind() {
-            Tag::Label => {
-                push_label(cap);
-            }
+            Tag::Label => label_captures.push((Tag::Label, cap)),
             Tag::Reference => {
-                for child in cap.children() {
-                    if child.kind() == Tag::Label {
-                        push_label(child);
-                    }
-                }
+                let label = cap.children().find(|c| c.kind() == Tag::Label).unwrap();
+                label_captures.push((Tag::Reference, label));
             }
             _ => {}
         }
     }
-    if offset < code.len() {
-        result.push(Chunk::Verbatim(code[offset..code.len()].into()));
+
+    // Convert #Labels into (span, chunk) pairs
+    let span_chunks = label_captures.iter().map(|(tag, cap)| {
+        let mut name = LabelName::default();
+        for child in cap.children() {
+            match child.kind() {
+                Tag::Namespace => {
+                    name.namespace = Some(child.text().into());
+                }
+                Tag::Global => {
+                    name.name = child.text().into();
+                }
+                Tag::Local => name.local = Some(child.text().into()),
+                _ => unimplemented!(),
+            }
+        }
+        let chunk = match tag {
+            Tag::Label => Chunk::Label(name),
+            Tag::Reference => Chunk::Reference(name),
+            _ => unimplemented!(),
+        };
+        (cap.span(), chunk)
+    });
+
+    // Split code along #Label boundaries
+    let mut last_index = 0;
+    let mut result = vec![];
+    for (span, chunk) in span_chunks {
+        let Range { start, end } = span;
+        if last_index < span.start {
+            result.push(Chunk::Verbatim(code[last_index..start].into()));
+        }
+        result.push(chunk);
+        last_index = end;
+    }
+    if last_index < code.len() {
+        result.push(Chunk::Verbatim(code[last_index..code.len()].into()));
     }
     result
 }

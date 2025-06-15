@@ -181,11 +181,10 @@ fn increment(s: &mut CompactString) {
 
 #[cfg(test)]
 mod test {
-    use core::num;
     use std::collections::HashSet;
 
     use compact_str::CompactString;
-    use insta::{assert_debug_snapshot, assert_snapshot};
+    use insta::assert_snapshot;
 
     use crate::labels::{parse::LabelName, sanitize::Registry};
 
