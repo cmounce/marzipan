@@ -27,6 +27,7 @@ impl LabelId {
 pub struct Registry {
     label_transforms: HashMap<LabelId, Transform>,
     existing: HashSet<CompactString>,
+    anonymous_counter: CompactString,
 }
 
 enum Transform {
@@ -61,6 +62,7 @@ impl Registry {
         Self {
             label_transforms,
             existing,
+            anonymous_counter: "_".into(),
         }
     }
 
@@ -101,6 +103,15 @@ impl Registry {
             }
         }
         candidate
+    }
+
+    pub fn gen_anonymous(&mut self) -> CompactString {
+        while self.existing.contains(&self.anonymous_counter) {
+            increment(&mut self.anonymous_counter);
+        }
+        let result = self.anonymous_counter.clone();
+        increment(&mut self.anonymous_counter);
+        result
     }
 
     fn preferred_name(label: &LabelName) -> CompactString {
@@ -183,7 +194,7 @@ fn increment(s: &mut CompactString) {
 mod test {
     use std::collections::HashSet;
 
-    use compact_str::CompactString;
+    use compact_str::{CompactString, CompactStringExt};
     use insta::assert_snapshot;
 
     use crate::labels::{parse::LabelName, sanitize::Registry};
@@ -298,5 +309,24 @@ mod test {
         LabelName { namespace: None, name: "BAR456", local: None } => BAR_0
         LabelName { namespace: None, name: "foo2bar", local: None } => foo_bar
         "#);
+    }
+
+    #[test]
+    fn test_gen_anonymous() {
+        let mut registry = Registry::new();
+        for letter in ["a", "e", "i"] {
+            registry.sanitize(&LabelName {
+                namespace: None,
+                name: letter.into(),
+                local: None,
+            });
+        }
+        let result: Vec<_> = (0..10).map(|_| registry.gen_anonymous()).collect();
+        let result = result.join(", ");
+
+        // It's safer if anonymous labels don't start with a digit.
+        // If one ever did, it could change `#take gems 123@f` to something
+        // like `#take gems 1230`, altering how the ZZT-OOP parses.
+        assert_snapshot!(result, @"_, b, c, d, f, g, h, j, k, l");
     }
 }
