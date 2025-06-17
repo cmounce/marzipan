@@ -8,8 +8,11 @@ use crate::{peg::ParseState, world::Stat};
 pub type ParsedStat = Vec<Chunk>;
 pub enum Chunk {
     Verbatim(String),
-    Label(LabelName),
-    Reference(LabelName),
+    Label {
+        is_ref: bool,
+        is_anon: bool,
+        name: LabelName,
+    },
 }
 
 #[derive(Clone, Debug, Default)]
@@ -44,22 +47,22 @@ pub fn parse_stat_labels(stat: &Stat) -> ParsedStat {
     // Convert #Labels into (span, chunk) pairs
     let span_chunks = label_captures.iter().map(|(tag, cap)| {
         let mut name = LabelName::default();
+        let mut is_anon = false;
         for child in cap.children() {
             match child.kind() {
-                Tag::Namespace => {
-                    name.namespace = Some(child.text().into());
-                }
-                Tag::Global => {
+                Tag::Namespace => name.namespace = Some(child.text().into()),
+                Tag::Anon | Tag::Global => {
                     name.name = child.text().into();
+                    is_anon = child.kind() == Tag::Anon;
                 }
                 Tag::Local => name.local = Some(child.text().into()),
-                _ => unimplemented!(),
+                _ => unreachable!(),
             }
         }
-        let chunk = match tag {
-            Tag::Label => Chunk::Label(name),
-            Tag::Reference => Chunk::Reference(name),
-            _ => unimplemented!(),
+        let chunk = Chunk::Label {
+            is_ref: *tag == Tag::Reference,
+            is_anon,
+            name,
         };
         (cap.span(), chunk)
     });
