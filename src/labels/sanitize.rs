@@ -194,7 +194,7 @@ fn increment(s: &mut CompactString) {
 mod test {
     use std::collections::HashSet;
 
-    use compact_str::{CompactString, CompactStringExt};
+    use compact_str::CompactString;
     use insta::assert_snapshot;
 
     use crate::labels::{parse::LabelName, sanitize::Registry};

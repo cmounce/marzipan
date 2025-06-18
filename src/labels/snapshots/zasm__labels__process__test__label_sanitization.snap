@@ -1,0 +1,22 @@
+---
+source: src/labels/process.rs
+expression: board_to_text(board)
+---
+#end
+:touch
+#take gems 100 lt_
+#give gems 100
+You have hundreds of gems.
+#end
+:lt_
+#take gems 10 lt_0
+#give gems 10
+You have tens of gems.
+#end
+:lt_0
+#take gems 1 lt1
+#give gems 1
+You have at least one gem.
+#end
+:lt1
+You don't have any gems!

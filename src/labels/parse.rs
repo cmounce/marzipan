@@ -6,6 +6,8 @@ use grammar::Tag;
 use crate::{peg::ParseState, world::Stat};
 
 pub type ParsedStat = Vec<Chunk>;
+
+#[derive(Debug)]
 pub enum Chunk {
     Verbatim(String),
     Label {

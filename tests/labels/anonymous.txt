@@ -1,0 +1,27 @@
+#cycle 1
+:@
+#take gems 100 @f
+#give score 100
+#@b
+:@
+#take gems 10 @f
+#give score 10
+#@b
+:@
+#take gems 1 @f
+#give score 1
+#@b
+:@
+Your gems have been redeemed for score.
+---
+#end
+:touch
+#if not blocked rnd @f
+I'm another object with anonymous labels.
+#end
+:@
+#if blocked rndne @f
+Anonymous label names can be reused.
+#end
+:@
+Compare my code with the other object's.

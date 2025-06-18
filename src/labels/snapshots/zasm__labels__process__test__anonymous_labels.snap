@@ -1,0 +1,31 @@
+---
+source: src/labels/process.rs
+expression: board_to_text(board)
+---
+#cycle 1
+:_
+#take gems 100 a
+#give score 100
+#_
+:a
+#take gems 10 b
+#give score 10
+#a
+:b
+#take gems 1 c
+#give score 1
+#b
+:c
+Your gems have been redeemed for score.
+---
+#end
+:touch
+#if not blocked rnd _
+I'm another object with anonymous labels.
+#end
+:_
+#if blocked rndne a
+Anonymous label names can be reused.
+#end
+:a
+Compare my code with the other object's.

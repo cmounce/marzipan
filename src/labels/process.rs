@@ -24,13 +24,13 @@ pub fn process_labels(board: &mut Board) {
                     is_ref: _,
                     is_anon: _,
                 } => {
-                    let sanitized = registry.sanitize(name);
-                    *chunk = Chunk::Verbatim(sanitized.into());
+                    name.name = registry.sanitize(name).into();
                 }
             }
         }
     }
 
+    // Assign names to anonymous labels
     anonymous_forward_pass(&mut stats, &mut registry);
     anonymous_backward_pass(&mut stats);
 
@@ -40,7 +40,11 @@ pub fn process_labels(board: &mut Board) {
             .into_iter()
             .map(|chunk| match chunk {
                 Chunk::Verbatim(s) => s,
-                _ => unimplemented!(),
+                Chunk::Label {
+                    is_ref: _,
+                    is_anon: _,
+                    name,
+                } => name.name.into(),
             })
             .collect();
         old_stat.code = new_code;
@@ -104,5 +108,63 @@ fn anonymous_backward_pass(stats: &mut [ParsedStat]) {
                 _ => {}
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::fs;
+
+    use insta::assert_snapshot;
+
+    use crate::world::{Board, Stat};
+
+    use super::process_labels;
+
+    fn board_from_text(path: &str) -> Board {
+        let input = fs::read_to_string(path).unwrap();
+        let codes: Vec<String> = input.split("---\n").map(|s| s.into()).collect();
+        let blank = fs::read("tests/blank.brd").unwrap();
+        let mut board = Board::from_bytes(&blank).unwrap();
+        board.stats = codes
+            .into_iter()
+            .map(|code| Stat {
+                x: 1,
+                y: 1,
+                x_step: 0,
+                y_step: 0,
+                cycle: 3,
+                p1: 2,
+                p2: 0,
+                p3: 0,
+                follower: -1,
+                leader: -1,
+                under_element: 0,
+                under_color: 0,
+                instruction_pointer: 0,
+                bind_index: 0,
+                code,
+            })
+            .collect();
+        board
+    }
+
+    fn board_to_text(board: Board) -> String {
+        let codes: Vec<_> = board.stats.into_iter().map(|stat| stat.code).collect();
+        codes.join("---\n")
+    }
+
+    #[test]
+    fn test_label_sanitization() {
+        let mut board = board_from_text("tests/labels/sanitize.txt");
+        process_labels(&mut board);
+        assert_snapshot!(board_to_text(board));
+    }
+
+    #[test]
+    fn test_anonymous_labels() {
+        let mut board = board_from_text("tests/labels/anonymous.txt");
+        process_labels(&mut board);
+        assert_snapshot!(board_to_text(board));
     }
 }
