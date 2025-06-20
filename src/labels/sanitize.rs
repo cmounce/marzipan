@@ -2,25 +2,14 @@ use std::collections::{HashMap, HashSet};
 
 use compact_str::CompactString;
 
-use super::parse::LabelName;
-
 #[derive(PartialEq, Eq, Hash)]
 struct LabelId(CompactString);
 
 impl LabelId {
-    fn new(label: &LabelName) -> Self {
-        let mut result = CompactString::with_capacity(0);
-        if let Some(namespace) = &label.namespace {
-            result.push_str(&namespace);
-            result.push('~');
-        }
-        result.push_str(&label.name);
-        if let Some(local) = &label.local {
-            result.push('.');
-            result.push_str(&local);
-        }
+    fn new(label: &str) -> Self {
+        let mut result = CompactString::new(label);
         result.make_ascii_lowercase();
-        LabelId(result)
+        Self(result)
     }
 }
 
@@ -36,11 +25,12 @@ enum Transform {
 }
 
 impl Transform {
-    fn apply(&self, label: &LabelName) -> CompactString {
+    fn apply(&self, label: &str) -> CompactString {
+        let preferred = preferred_label_name(label);
         match self {
-            Transform::Preferred => Registry::preferred_name(label),
+            Transform::Preferred => preferred,
             Transform::FilteredWithSuffix(suffix) => {
-                let mut result = Registry::preferred_name(label);
+                let mut result = preferred;
                 result = Registry::filter_label_chars(&result);
                 result.push_str(&suffix);
                 result
@@ -66,11 +56,11 @@ impl Registry {
         }
     }
 
-    pub fn sanitize(&mut self, label: &LabelName) -> CompactString {
+    pub fn sanitize(&mut self, label: &str) -> CompactString {
         // Use existing sanitization if one exists
         let id = LabelId::new(label);
         if let Some(transform) = self.label_transforms.get(&id) {
-            return transform.apply(&label);
+            return transform.apply(label);
         }
 
         // Try to use label's preferred name as-is
@@ -114,22 +104,6 @@ impl Registry {
         result
     }
 
-    fn preferred_name(label: &LabelName) -> CompactString {
-        let mut result = CompactString::const_new("");
-        if label.namespace.is_some() || label.local.is_some() {
-            // Prevent namespaces and local labels from starting with a digit.
-            // This ensures stuff like `#take gems 100.99orless` won't compile
-            // to `#take gems 10099orless` (would parse incorrectly).
-            result.push('_');
-        }
-        if let Some(local) = &label.local {
-            result.push_str(local);
-        } else {
-            result.push_str(&label.name);
-        };
-        result
-    }
-
     fn is_valid_label(s: &CompactString) -> bool {
         if s.len() == 0 {
             return false;
@@ -159,6 +133,22 @@ impl Registry {
     }
 }
 
+/// Given an unsanitized full name, generate the first-pick name we'd like to
+/// assign this label. (Results returned by this function are subject to veto
+/// if they are invalid or already taken.)
+fn preferred_label_name(s: &str) -> CompactString {
+    if let Some((_, suffix)) = s.rsplit_once(|c: char| !c.is_ascii_alphanumeric() && c != '_') {
+        // Prevent namespaces and local labels from starting with a digit.
+        // This ensures stuff like `#take gems 100.99orless` won't compile
+        // to `#take gems 10099orless` (would parse incorrectly).
+        let mut result = CompactString::const_new("_");
+        result.push_str(suffix);
+        result
+    } else {
+        CompactString::new(s)
+    }
+}
+
 /// Increments a string through label-safe characters.
 /// Characters loop through underscore and the letters a-z.
 /// Additionally, the final character is allowed to loop through 0-9.
@@ -166,12 +156,10 @@ fn increment(s: &mut CompactString) {
     let original_len = s.len();
 
     // Find a character we can increment without carry
-    dbg!(&s);
     let mut last_char = s.pop();
     while !(last_char == None || last_char != Some('z')) {
         last_char = s.pop();
     }
-    dbg!(s.len(), last_char);
 
     if let Some(c) = last_char {
         // Increment character in order: 0-9, then _, then a-z
@@ -204,7 +192,7 @@ mod test {
     use compact_str::CompactString;
     use insta::assert_snapshot;
 
-    use crate::labels::{parse::LabelName, sanitize::Registry};
+    use crate::labels::sanitize::Registry;
 
     use super::increment;
 
@@ -259,64 +247,47 @@ mod test {
     fn test_sanitize_simple() {
         let mut reg = Registry::new();
         let mut results = vec![];
-        let simple = |s: &str| -> LabelName {
-            LabelName {
-                name: s.into(),
-                namespace: None,
-                local: None,
-            }
-        };
-        let full = |ns: &str, name: &str, local: &str| -> LabelName {
-            let mut result = LabelName {
-                namespace: None,
-                name: name.into(),
-                local: None,
-            };
-            if ns.len() > 0 {
-                result.namespace = Some(ns.into());
-            }
-            if local.len() > 0 {
-                result.local = Some(local.into());
-            }
-            result
-        };
         let inputs = [
-            simple("foo"),
-            full("ns1", "foo", ""),
-            full("ns2", "foo", ""),
-            full("", "foo", "thisloop"),
-            full("", "foo", "thatloop"),
-            full("", "bar", "thisloop"),
-            full("", "bar", "thatloop"),
-            simple("bar1"),
-            simple("bar2"),
-            simple("bar123"),
-            simple("BAR123"),
-            simple("bar456"),
-            simple("BAR456"),
-            simple("foo2bar"),
+            "foo",
+            "ns1~foo",
+            "ns2~foo",
+            "foo.thisloop",
+            "foo.thatloop",
+            "bar.thisloop",
+            "bar.thatloop",
+            "foo$1.thisloop",
+            "foo$1.thatloop",
+            "bar1",
+            "bar2",
+            "bar123",
+            "BAR123",
+            "bar456",
+            "BAR456",
+            "foo2bar",
         ];
         for label in inputs {
-            let sanitized = reg.sanitize(&label);
-            assert_eq!(sanitized, reg.sanitize(&label));
+            let sanitized = reg.sanitize(label);
+            assert_eq!(sanitized, reg.sanitize(label));
             results.push(format!("{:?} => {}", &label, sanitized));
         }
         let result = results.join("\n");
         assert_snapshot!(result, @r#"
-        LabelName { namespace: None, name: "foo", local: None } => foo
-        LabelName { namespace: Some("ns1"), name: "foo", local: None } => _foo
-        LabelName { namespace: Some("ns2"), name: "foo", local: None } => _foo0
-        LabelName { namespace: None, name: "foo", local: Some("thisloop") } => _thisloop
-        LabelName { namespace: None, name: "foo", local: Some("thatloop") } => _thatloop
-        LabelName { namespace: None, name: "bar", local: Some("thisloop") } => _thisloop0
-        LabelName { namespace: None, name: "bar", local: Some("thatloop") } => _thatloop0
-        LabelName { namespace: None, name: "bar1", local: None } => bar1
-        LabelName { namespace: None, name: "bar2", local: None } => bar2
-        LabelName { namespace: None, name: "bar123", local: None } => bar_
-        LabelName { namespace: None, name: "BAR123", local: None } => BAR_
-        LabelName { namespace: None, name: "bar456", local: None } => bar_0
-        LabelName { namespace: None, name: "BAR456", local: None } => BAR_0
-        LabelName { namespace: None, name: "foo2bar", local: None } => foo_bar
+        "foo" => foo
+        "ns1~foo" => _foo
+        "ns2~foo" => _foo0
+        "foo.thisloop" => _thisloop
+        "foo.thatloop" => _thatloop
+        "bar.thisloop" => _thisloop0
+        "bar.thatloop" => _thatloop0
+        "foo$1.thisloop" => _thisloop1
+        "foo$1.thatloop" => _thatloop1
+        "bar1" => bar1
+        "bar2" => bar2
+        "bar123" => bar_
+        "BAR123" => BAR_
+        "bar456" => bar_0
+        "BAR456" => BAR_0
+        "foo2bar" => foo_bar
         "#);
     }
 
@@ -324,11 +295,7 @@ mod test {
     fn test_gen_anonymous() {
         let mut registry = Registry::new();
         for letter in ["a", "e", "i"] {
-            registry.sanitize(&LabelName {
-                namespace: None,
-                name: letter.into(),
-                local: None,
-            });
+            registry.sanitize(letter);
         }
         let result: Vec<_> = (0..10).map(|_| registry.gen_anonymous()).collect();
         let result = result.join(", ");

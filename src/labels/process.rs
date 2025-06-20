@@ -17,22 +17,7 @@ pub fn process_labels(board: &mut Board) {
     let mut registry = Registry::new();
 
     resolve_local_labels(&mut stats);
-
-    // Replace each label with its sanitized equivalent
-    for stat in stats.iter_mut() {
-        for chunk in stat.iter_mut() {
-            match chunk {
-                Chunk::Verbatim(_) => {}
-                Chunk::Label {
-                    name,
-                    is_ref: _,
-                    is_anon: _,
-                } => {
-                    name.name = registry.sanitize(name).into();
-                }
-            }
-        }
-    }
+    assign_named_labels(&mut stats, &mut registry);
 
     // Assign names to anonymous labels
     anonymous_forward_pass(&mut stats, &mut registry);
@@ -80,6 +65,34 @@ fn resolve_local_labels(stats: &mut [ParsedStat]) {
                             section = label.name.clone();
                         }
                     }
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+/// Assign sanitized names to all of the named labels.
+fn assign_named_labels(stats: &mut [ParsedStat], registry: &mut Registry) {
+    for stat in stats.iter_mut() {
+        for chunk in stat.iter_mut() {
+            match chunk {
+                Chunk::Label {
+                    name,
+                    is_ref: _,
+                    is_anon: false,
+                } => {
+                    let mut full_name = CompactString::const_new("");
+                    if let Some(namespace) = &name.namespace {
+                        full_name.push_str(&namespace);
+                        full_name.push('~');
+                    }
+                    full_name.push_str(&name.name);
+                    if let Some(local) = &name.local {
+                        full_name.push('.');
+                        full_name.push_str(&local);
+                    }
+                    name.name = registry.sanitize(&full_name).into();
                 }
                 _ => {}
             }
