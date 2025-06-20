@@ -1,3 +1,5 @@
+use compact_str::CompactString;
+
 use crate::world::Board;
 
 use super::{
@@ -13,6 +15,8 @@ pub fn process_labels(board: &mut Board) {
         .map(|stat| parse_stat_labels(&stat))
         .collect();
     let mut registry = Registry::new();
+
+    resolve_local_labels(&mut stats);
 
     // Replace each label with its sanitized equivalent
     for stat in stats.iter_mut() {
@@ -51,6 +55,41 @@ pub fn process_labels(board: &mut Board) {
     }
 }
 
+/// Resolve ".local" labels to "name.local" form.
+fn resolve_local_labels(stats: &mut [ParsedStat]) {
+    for stat in stats.iter_mut() {
+        let mut section = CompactString::const_new("");
+        for chunk in stat.iter_mut() {
+            match chunk {
+                Chunk::Label {
+                    is_ref,
+                    is_anon: false,
+                    name: label,
+                } => {
+                    // Handle cases where either one of (section name, label) is missing.
+                    // If both are present ("name.local") then the label is already fully resolved
+                    // and there is nothing to do.
+                    if label.name.is_empty() {
+                        // Expand :.local to :name.local
+                        assert!(label.local.is_some());
+                        label.name = section.clone()
+                    } else if label.local.is_none() {
+                        // Interpret label :name as start of new section.
+                        // Only label definitions do this; label references have no effect.
+                        if !*is_ref {
+                            section = label.name.clone();
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+/// Simultaneously:
+/// 1. Assign names to anonymous labels.
+/// 2. Resolve anonymous backward references to their label names.
 fn anonymous_forward_pass(stats: &mut [ParsedStat], registry: &mut Registry) {
     let mut label_names = vec![];
     for stat in stats.iter_mut() {
@@ -84,6 +123,7 @@ fn anonymous_forward_pass(stats: &mut [ParsedStat], registry: &mut Registry) {
     }
 }
 
+/// Resolve anonymous forward references to their label names.
 fn anonymous_backward_pass(stats: &mut [ParsedStat]) {
     for stat in stats.iter_mut() {
         let mut last_name = None;
@@ -164,6 +204,13 @@ mod test {
     #[test]
     fn test_anonymous_labels() {
         let mut board = board_from_text("tests/labels/anonymous.txt");
+        process_labels(&mut board);
+        assert_snapshot!(board_to_text(board));
+    }
+
+    #[test]
+    fn test_local_labels() {
+        let mut board = board_from_text("tests/labels/local.txt");
         process_labels(&mut board);
         assert_snapshot!(board_to_text(board));
     }

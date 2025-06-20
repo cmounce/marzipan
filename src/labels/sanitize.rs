@@ -115,12 +115,19 @@ impl Registry {
     }
 
     fn preferred_name(label: &LabelName) -> CompactString {
-        let src = if let Some(local) = &label.local {
-            local
+        let mut result = CompactString::const_new("");
+        if label.namespace.is_some() || label.local.is_some() {
+            // Prevent namespaces and local labels from starting with a digit.
+            // This ensures stuff like `#take gems 100.99orless` won't compile
+            // to `#take gems 10099orless` (would parse incorrectly).
+            result.push('_');
+        }
+        if let Some(local) = &label.local {
+            result.push_str(local);
         } else {
-            &label.name
+            result.push_str(&label.name);
         };
-        CompactString::new(src)
+        result
     }
 
     fn is_valid_label(s: &CompactString) -> bool {
@@ -275,7 +282,8 @@ mod test {
         };
         let inputs = [
             simple("foo"),
-            full("alt", "foo", ""),
+            full("ns1", "foo", ""),
+            full("ns2", "foo", ""),
             full("", "foo", "thisloop"),
             full("", "foo", "thatloop"),
             full("", "bar", "thisloop"),
@@ -296,11 +304,12 @@ mod test {
         let result = results.join("\n");
         assert_snapshot!(result, @r#"
         LabelName { namespace: None, name: "foo", local: None } => foo
-        LabelName { namespace: Some("alt"), name: "foo", local: None } => foo0
-        LabelName { namespace: None, name: "foo", local: Some("thisloop") } => thisloop
-        LabelName { namespace: None, name: "foo", local: Some("thatloop") } => thatloop
-        LabelName { namespace: None, name: "bar", local: Some("thisloop") } => thisloop0
-        LabelName { namespace: None, name: "bar", local: Some("thatloop") } => thatloop0
+        LabelName { namespace: Some("ns1"), name: "foo", local: None } => _foo
+        LabelName { namespace: Some("ns2"), name: "foo", local: None } => _foo0
+        LabelName { namespace: None, name: "foo", local: Some("thisloop") } => _thisloop
+        LabelName { namespace: None, name: "foo", local: Some("thatloop") } => _thatloop
+        LabelName { namespace: None, name: "bar", local: Some("thisloop") } => _thisloop0
+        LabelName { namespace: None, name: "bar", local: Some("thatloop") } => _thatloop0
         LabelName { namespace: None, name: "bar1", local: None } => bar1
         LabelName { namespace: None, name: "bar2", local: None } => bar2
         LabelName { namespace: None, name: "bar123", local: None } => bar_

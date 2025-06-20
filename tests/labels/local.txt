@@ -1,0 +1,16 @@
+'Slightly contrived example: two routines
+'using the same local label ".loop"
+:run_w
+#walk w
+:.loop
+#try w stop
+#.loop
+'
+:run_e
+#walk e
+:.loop
+#try e stop
+#.loop
+'
+:stop
+#walk i

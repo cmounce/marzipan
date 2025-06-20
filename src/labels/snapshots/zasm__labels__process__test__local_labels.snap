@@ -1,0 +1,20 @@
+---
+source: src/labels/process.rs
+expression: board_to_text(board)
+---
+'Slightly contrived example: two routines
+'using the same local label ".loop"
+:run_w
+#walk w
+:_loop
+#try w stop
+#_loop
+'
+:run_e
+#walk e
+:_loop0
+#try e stop
+#_loop0
+'
+:stop
+#walk i
