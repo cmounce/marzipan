@@ -14,3 +14,39 @@
 '
 :stop
 #walk i
+---
+'Using locals before any globals are defined
+:.loop
+#take gems 1 .break
+#.loop
+:.break
+---
+'Multiple sections with the same name
+#end
+:touch
+Trying to sell you some ammo...
+#take gems 10 .skip
+#give ammo 10
+:.skip
+#zap touch
+#end
+:touch
+Trying to sell you some torches...
+#take gems 15 .skip
+#give torches 5
+:.skip
+#restore touch
+---
+'Multiple locals with the same name
+#end
+:repeat3
+:.z
+:.z
+:.z
+#take gems 1 .skip
+#give score 1
+:.skip
+#zap .z
+#.z
+:.z
+

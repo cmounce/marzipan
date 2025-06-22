@@ -43,7 +43,8 @@ pub fn process_labels(board: &mut Board) {
 /// Resolve ".local" labels to "name.local" form.
 fn resolve_local_labels(stats: &mut [ParsedStat]) {
     for stat in stats.iter_mut() {
-        let mut section = CompactString::const_new("");
+        let mut section_counter = 0;
+        let mut section = CompactString::const_new("$0");
         for chunk in stat.iter_mut() {
             match chunk {
                 Chunk::Label {
@@ -57,12 +58,13 @@ fn resolve_local_labels(stats: &mut [ParsedStat]) {
                     if label.name.is_empty() {
                         // Expand :.local to :name.local
                         assert!(label.local.is_some());
-                        label.name = section.clone()
+                        label.name = section.clone();
                     } else if label.local.is_none() {
                         // Interpret label :name as start of new section.
                         // Only label definitions do this; label references have no effect.
                         if !*is_ref {
-                            section = label.name.clone();
+                            section_counter += 1;
+                            section = format!("{}${}", &label.name, section_counter).into();
                         }
                     }
                 }

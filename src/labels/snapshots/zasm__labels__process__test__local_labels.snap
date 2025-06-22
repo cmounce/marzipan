@@ -18,3 +18,38 @@ expression: board_to_text(board)
 '
 :stop
 #walk i
+---
+'Using locals before any globals are defined
+:_loop1
+#take gems 1 _break
+#_loop1
+:_break
+---
+'Multiple sections with the same name
+#end
+:touch
+Trying to sell you some ammo...
+#take gems 10 _skip
+#give ammo 10
+:_skip
+#zap touch
+#end
+:touch
+Trying to sell you some torches...
+#take gems 15 _skip0
+#give torches 5
+:_skip0
+#restore touch
+---
+'Multiple locals with the same name
+#end
+:repeat3
+:_z
+:_z
+:_z
+#take gems 1 _skip1
+#give score 1
+:_skip1
+#zap _z
+#_z
+:_z
