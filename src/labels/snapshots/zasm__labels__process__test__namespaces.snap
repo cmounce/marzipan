@@ -1,0 +1,34 @@
+---
+source: src/labels/process.rs
+expression: board_to_text(board)
+---
+'Make sure anonymous references respect namespaces
+#_
+#a
+#b
+:_
+:a
+:b
+#_
+#a
+#b
+---
+'Make sure namespaces don't interfere with anonymous label reuse.
+'These three should match the ones above.
+:_
+:a
+:b
+---
+'Make sure locals exist in separate namespaces
+:do_stuff
+#lock
+:_loop
+'
+:_do_stuff
+:_loop0
+/i#if blocked rndne _loop0
+'
+#take time 1 _break
+#_loop
+:_break
+#unlock

@@ -1,4 +1,5 @@
 use compact_str::CompactString;
+use rustc_hash::FxHashMap;
 
 use crate::world::Board;
 
@@ -43,8 +44,17 @@ pub fn process_labels(board: &mut Board) {
 /// Resolve ".local" labels to "name.local" form.
 fn resolve_local_labels(stats: &mut [ParsedStat]) {
     for stat in stats.iter_mut() {
-        let mut section_counter = 0;
-        let mut section = CompactString::const_new("$0");
+        // Helper: Generate unique section strings like "touch$0"
+        let mut i = 0;
+        let mut make_section_id = |label_name: &str| -> CompactString {
+            let result = format!("{}${}", &label_name, i);
+            i += 1;
+            result.into()
+        };
+
+        let mut namespace_to_section: FxHashMap<Option<CompactString>, CompactString> =
+            FxHashMap::default();
+
         for chunk in stat.iter_mut() {
             match chunk {
                 Chunk::Label {
@@ -58,13 +68,21 @@ fn resolve_local_labels(stats: &mut [ParsedStat]) {
                     if label.name.is_empty() {
                         // Expand :.local to :name.local
                         assert!(label.local.is_some());
-                        label.name = section.clone();
+                        label.name = if let Some(section) =
+                            namespace_to_section.get(&label.namespace)
+                        {
+                            section.clone()
+                        } else {
+                            let section = make_section_id("");
+                            namespace_to_section.insert(label.namespace.clone(), section.clone());
+                            section
+                        }
                     } else if label.local.is_none() {
                         // Interpret label :name as start of new section.
                         // Only label definitions do this; label references have no effect.
                         if !*is_ref {
-                            section_counter += 1;
-                            section = format!("{}${}", &label.name, section_counter).into();
+                            namespace_to_section
+                                .insert(label.namespace.clone(), make_section_id(&label.name));
                         }
                     }
                 }
@@ -106,9 +124,25 @@ fn assign_named_labels(stats: &mut [ParsedStat], registry: &mut Registry) {
 /// 1. Assign names to anonymous labels.
 /// 2. Resolve anonymous backward references to their label names.
 fn anonymous_forward_pass(stats: &mut [ParsedStat], registry: &mut Registry) {
+    // Save generated label names so they can be reused across multiple objects
     let mut label_names = vec![];
+
     for stat in stats.iter_mut() {
+        // Helper: Get the next label name that hasn't been used in this object yet
         let mut i = 0;
+        let mut get_next_name = || -> CompactString {
+            if i == label_names.len() {
+                label_names.push(registry.gen_anonymous());
+            }
+            let result = label_names[i].clone();
+            i += 1;
+            result
+        };
+
+        // Track each namespace's most recently defined anonymous label
+        let mut namespace_to_latest: FxHashMap<Option<CompactString>, CompactString> =
+            FxHashMap::default();
+
         for chunk in stat.iter_mut() {
             match chunk {
                 Chunk::Label {
@@ -116,11 +150,9 @@ fn anonymous_forward_pass(stats: &mut [ParsedStat], registry: &mut Registry) {
                     is_anon: true,
                     name,
                 } => {
-                    if i == label_names.len() {
-                        label_names.push(registry.gen_anonymous());
-                    }
-                    name.name = label_names[i].clone();
-                    i += 1;
+                    let assigned = get_next_name();
+                    namespace_to_latest.insert(name.namespace.clone(), assigned.clone());
+                    name.name = assigned;
                 }
                 Chunk::Label {
                     is_ref: true,
@@ -129,7 +161,7 @@ fn anonymous_forward_pass(stats: &mut [ParsedStat], registry: &mut Registry) {
                 } => {
                     if name.name == "@b" {
                         // TODO: a more explicit check that a "before" label exists
-                        name.name = label_names[i - 1].clone();
+                        name.name = namespace_to_latest.get(&name.namespace).unwrap().clone();
                     }
                 }
                 _ => {}
@@ -141,7 +173,7 @@ fn anonymous_forward_pass(stats: &mut [ParsedStat], registry: &mut Registry) {
 /// Resolve anonymous forward references to their label names.
 fn anonymous_backward_pass(stats: &mut [ParsedStat]) {
     for stat in stats.iter_mut() {
-        let mut last_name = None;
+        let mut namespace_to_latest = FxHashMap::default();
         for chunk in stat.iter_mut().rev() {
             match chunk {
                 Chunk::Label {
@@ -149,7 +181,7 @@ fn anonymous_backward_pass(stats: &mut [ParsedStat]) {
                     is_anon: true,
                     name,
                 } => {
-                    last_name = Some(name.name.clone());
+                    namespace_to_latest.insert(name.namespace.clone(), name.name.clone());
                 }
                 Chunk::Label {
                     is_ref: true,
@@ -157,7 +189,7 @@ fn anonymous_backward_pass(stats: &mut [ParsedStat]) {
                     name,
                 } => {
                     if name.name == "@f" {
-                        name.name = last_name.clone().unwrap();
+                        name.name = namespace_to_latest.get(&name.namespace).unwrap().clone();
                     }
                 }
                 _ => {}
@@ -226,6 +258,13 @@ mod test {
     #[test]
     fn test_local_labels() {
         let mut board = board_from_text("tests/labels/local.txt");
+        process_labels(&mut board);
+        assert_snapshot!(board_to_text(board));
+    }
+
+    #[test]
+    fn test_namespaces() {
+        let mut board = board_from_text("tests/labels/namespaces.txt");
         process_labels(&mut board);
         assert_snapshot!(board_to_text(board));
     }

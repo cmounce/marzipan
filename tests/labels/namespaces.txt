@@ -1,0 +1,30 @@
+'Make sure anonymous references respect namespaces
+#@f
+#foo~@f
+#bar~@f
+:@
+:foo~@
+:bar~@
+#@b
+#foo~@b
+#bar~@b
+---
+'Make sure namespaces don't interfere with anonymous label reuse.
+'These three should match the ones above.
+:@
+:@
+:@
+---
+'Make sure locals exist in separate namespaces
+:do_stuff
+#lock
+:.loop
+'
+:foo~do_stuff
+:foo~.loop
+/i#if blocked rndne foo~.loop
+'
+#take time 1 .break
+#.loop
+:.break
+#unlock
