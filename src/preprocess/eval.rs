@@ -21,9 +21,6 @@ trait FileLoaderTrait {
 struct FileLoader {
     working_dir: PathBuf,
 }
-struct MockFileLoader {
-    content: String,
-}
 
 impl FileLoaderTrait for FileLoader {
     fn load(&self, path: &Path) -> Result<String> {
@@ -34,6 +31,12 @@ impl FileLoaderTrait for FileLoader {
     }
 }
 
+#[cfg(test)]
+struct MockFileLoader {
+    content: String,
+}
+
+#[cfg(test)]
 impl FileLoaderTrait for MockFileLoader {
     fn load(&self, _path: &Path) -> Result<String> {
         Ok(self.content.clone())

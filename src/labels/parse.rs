@@ -86,22 +86,6 @@ pub fn parse_stat_labels(stat: &Stat) -> ParsedStat {
     result
 }
 
-pub fn print_labels(b: &Stat) {
-    let code = &b.code;
-    let mut parser = ParseState::new(code);
-    assert!(
-        grammar::program(&mut parser),
-        "Couldn't parse code: {:?}",
-        code
-    );
-
-    for capture in parser.captures() {
-        if capture.kind() == Tag::Label {
-            println!("- {}", capture.text());
-        }
-    }
-}
-
 mod grammar {
     use peg_macro::grammar;
 
