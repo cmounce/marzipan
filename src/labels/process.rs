@@ -1,19 +1,31 @@
 use compact_str::CompactString;
 use rustc_hash::FxHashMap;
 
-use crate::world::Board;
+use crate::{
+    error::{CompileMessage, CompileResult},
+    world::Board,
+};
 
 use super::{
     parse::{Chunk, ParsedStat, parse_stat_labels},
     sanitize::Registry,
 };
 
-pub fn process_labels(board: &mut Board) {
+pub fn process_labels(board: &mut Board) -> CompileResult {
     // Parse stats into chunks
+    let mut messages: Vec<CompileMessage> = vec![];
     let mut stats: Vec<ParsedStat> = board
         .stats
         .iter()
-        .map(|stat| parse_stat_labels(&stat))
+        .enumerate()
+        .map(|(index, stat)| {
+            let (parsed_stat, mut new_messages) = parse_stat_labels(&stat);
+            new_messages
+                .iter_mut()
+                .for_each(|m| m.location.stat = Some(index));
+            messages.extend(new_messages);
+            parsed_stat
+        })
         .collect();
     let mut registry = Registry::new();
 
@@ -39,6 +51,8 @@ pub fn process_labels(board: &mut Board) {
             .collect();
         old_stat.code = new_code;
     }
+
+    Ok(messages)
 }
 
 /// Resolve ".local" labels to "name.local" form.
@@ -244,28 +258,28 @@ mod test {
     #[test]
     fn test_label_sanitization() {
         let mut board = board_from_text("tests/labels/sanitize.txt");
-        process_labels(&mut board);
+        let _ = process_labels(&mut board);
         assert_snapshot!(board_to_text(board));
     }
 
     #[test]
     fn test_anonymous_labels() {
         let mut board = board_from_text("tests/labels/anonymous.txt");
-        process_labels(&mut board);
+        let _ = process_labels(&mut board);
         assert_snapshot!(board_to_text(board));
     }
 
     #[test]
     fn test_local_labels() {
         let mut board = board_from_text("tests/labels/local.txt");
-        process_labels(&mut board);
+        let _ = process_labels(&mut board);
         assert_snapshot!(board_to_text(board));
     }
 
     #[test]
     fn test_namespaces() {
         let mut board = board_from_text("tests/labels/namespaces.txt");
-        process_labels(&mut board);
+        let _ = process_labels(&mut board);
         assert_snapshot!(board_to_text(board));
     }
 }

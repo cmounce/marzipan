@@ -3,7 +3,11 @@ use std::ops::Range;
 use compact_str::CompactString;
 use grammar::Tag;
 
-use crate::{peg::ParseState, world::Stat};
+use crate::{
+    error::{CompileMessage, Level, Location},
+    peg::ParseState,
+    world::Stat,
+};
 
 pub type ParsedStat = Vec<Chunk>;
 
@@ -24,7 +28,7 @@ pub struct LabelName {
     pub local: Option<CompactString>,
 }
 
-pub fn parse_stat_labels(stat: &Stat) -> ParsedStat {
+pub fn parse_stat_labels(stat: &Stat) -> (ParsedStat, Vec<CompileMessage>) {
     let code = &stat.code;
     let mut parser = ParseState::new(code);
     assert!(
@@ -32,6 +36,25 @@ pub fn parse_stat_labels(stat: &Stat) -> ParsedStat {
         "Couldn't parse code: {:?}",
         code
     );
+
+    let mut messages = vec![];
+    for cap in parser.walk_captures() {
+        match cap.kind() {
+            Tag::WarnTrailing => {
+                messages.push(CompileMessage {
+                    level: Level::Warning,
+                    message: "Trailing characters at end of line".into(),
+                    location: Location {
+                        file_path: None,
+                        board: None,
+                        stat: None,
+                        span: None,
+                    },
+                });
+            }
+            _ => {}
+        }
+    }
 
     // Find all #Label captures and record which ones were references
     let mut label_captures = vec![];
@@ -83,7 +106,7 @@ pub fn parse_stat_labels(stat: &Stat) -> ParsedStat {
     if last_index < code.len() {
         result.push(Chunk::Verbatim(code[last_index..code.len()].into()));
     }
-    result
+    (result, messages)
 }
 
 mod grammar {
@@ -139,7 +162,7 @@ mod grammar {
                 "zap" sp message
             ) /
             message // shorthand send
-        ) s eol; // note: this allows trailing (ignored) whitespace
+        ) warn_trailing eol;
 
         //
         //  Common definitions
@@ -204,6 +227,9 @@ mod grammar {
             &"s" ("scroll" / "segment" / "shark" / "slider"("ew"/"ns") / "slime" / "solid" / "spinninggun" / "star") /
             &'t'..'w' ("tiger" / "torch" / "transporter" / "water")
         ) eow;
+
+        // Warnings
+        warn_trailing = (#WarnTrailing:(!eol ANY)+)?; // TODO: Document precedence rules
 
         //
         // Generic helpers

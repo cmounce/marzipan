@@ -1,4 +1,5 @@
 mod encoding;
+mod error;
 mod labels;
 mod peg;
 mod preprocess;
@@ -36,8 +37,22 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     // Resolve labels to proper ZZT-OOP
-    for mut board in &mut world.boards {
-        process_labels(&mut board);
+    let mut messages = vec![];
+    for (i, mut board) in world.boards.iter_mut().enumerate() {
+        let mut result = process_labels(&mut board).unwrap();
+        for message in result.iter_mut() {
+            message.location.board = Some(i);
+            message.location.file_path = Some(world_filename.clone());
+        }
+        messages.extend(result);
+    }
+
+    // Print diagnostics
+    for (i, message) in messages.iter().enumerate() {
+        if i > 0 {
+            println!();
+        }
+        println!("{}", message.rich_format(&world));
     }
 
     // Try to write a modified world file
