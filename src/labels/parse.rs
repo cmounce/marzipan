@@ -48,7 +48,7 @@ pub fn parse_stat_labels(stat: &Stat) -> (ParsedStat, Vec<CompileMessage>) {
                         file_path: None,
                         board: None,
                         stat: None,
-                        span: None,
+                        span: Some(cap.span()),
                     },
                 });
             }
