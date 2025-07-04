@@ -22,6 +22,7 @@ pub struct LabelName {
     pub namespace: Option<CompactString>,
     pub name: CompactString,
     pub local: Option<CompactString>,
+    pub span: Range<usize>,
 }
 
 pub fn parse_stat_labels(stat: &Stat, ctx: &Context) -> ParsedStat {
@@ -59,6 +60,7 @@ pub fn parse_stat_labels(stat: &Stat, ctx: &Context) -> ParsedStat {
     // Convert #Labels into (span, chunk) pairs
     let span_chunks = label_captures.iter().map(|(tag, cap)| {
         let mut name = LabelName::default();
+        name.span = cap.span();
         let mut is_anon = false;
         for child in cap.children() {
             match child.kind() {

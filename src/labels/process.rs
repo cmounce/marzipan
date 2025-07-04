@@ -22,8 +22,8 @@ pub fn process_labels(board: &mut Board, ctx: &Context) {
     assign_named_labels(&mut stats, &mut registry);
 
     // Assign names to anonymous labels
-    anonymous_forward_pass(&mut stats, &mut registry);
-    anonymous_backward_pass(&mut stats);
+    anonymous_forward_pass(&mut stats, &mut registry, ctx);
+    anonymous_backward_pass(&mut stats, ctx);
 
     // Join chunks together and replace old stats' code
     for (old_stat, parsed_stat) in board.stats.iter_mut().zip(stats.into_iter()) {
@@ -124,11 +124,11 @@ fn assign_named_labels(stats: &mut [ParsedStat], registry: &mut Registry) {
 /// Simultaneously:
 /// 1. Assign names to anonymous labels.
 /// 2. Resolve anonymous backward references to their label names.
-fn anonymous_forward_pass(stats: &mut [ParsedStat], registry: &mut Registry) {
+fn anonymous_forward_pass(stats: &mut [ParsedStat], registry: &mut Registry, ctx: &Context) {
     // Save generated label names so they can be reused across multiple objects
     let mut label_names = vec![];
 
-    for stat in stats.iter_mut() {
+    for (stat_index, stat) in stats.iter_mut().enumerate() {
         // Helper: Get the next label name that hasn't been used in this object yet
         let mut i = 0;
         let mut get_next_name = || -> CompactString {
@@ -144,6 +144,7 @@ fn anonymous_forward_pass(stats: &mut [ParsedStat], registry: &mut Registry) {
         let mut namespace_to_latest: FxHashMap<Option<CompactString>, CompactString> =
             FxHashMap::default();
 
+        let ctx = ctx.with_stat(stat_index);
         for chunk in stat.iter_mut() {
             match chunk {
                 Chunk::Label {
@@ -161,8 +162,12 @@ fn anonymous_forward_pass(stats: &mut [ParsedStat], registry: &mut Registry) {
                     name,
                 } => {
                     if name.name == "@b" {
-                        // TODO: a more explicit check that a "before" label exists
-                        name.name = namespace_to_latest.get(&name.namespace).unwrap().clone();
+                        if let Some(backward) = namespace_to_latest.get(&name.namespace) {
+                            name.name = backward.clone();
+                        } else {
+                            ctx.with_span(name.span.clone())
+                                .error("backward reference @b without prior anonymous label :@");
+                        }
                     }
                 }
                 _ => {}
@@ -172,9 +177,10 @@ fn anonymous_forward_pass(stats: &mut [ParsedStat], registry: &mut Registry) {
 }
 
 /// Resolve anonymous forward references to their label names.
-fn anonymous_backward_pass(stats: &mut [ParsedStat]) {
-    for stat in stats.iter_mut() {
+fn anonymous_backward_pass(stats: &mut [ParsedStat], ctx: &Context) {
+    for (stat_index, stat) in stats.iter_mut().enumerate() {
         let mut namespace_to_latest = FxHashMap::default();
+        let ctx = ctx.with_stat(stat_index);
         for chunk in stat.iter_mut().rev() {
             match chunk {
                 Chunk::Label {
@@ -190,7 +196,12 @@ fn anonymous_backward_pass(stats: &mut [ParsedStat]) {
                     name,
                 } => {
                     if name.name == "@f" {
-                        name.name = namespace_to_latest.get(&name.namespace).unwrap().clone();
+                        if let Some(forward) = namespace_to_latest.get(&name.namespace) {
+                            name.name = forward.clone();
+                        } else {
+                            ctx.with_span(name.span.clone())
+                                .error("forward reference @f without following anonymous label :@");
+                        }
                     }
                 }
                 _ => {}

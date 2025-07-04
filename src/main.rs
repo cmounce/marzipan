@@ -7,7 +7,7 @@ mod world;
 
 use anyhow::anyhow;
 use error::Context as ErrContext;
-use labels::process::process_labels;
+use labels::process_labels;
 use preprocess::eval::Context;
 use std::{env, error::Error, fs, path::PathBuf, process::exit};
 use world::World;
