@@ -6,6 +6,7 @@ mod preprocess;
 mod world;
 
 use anyhow::anyhow;
+use error::Context as ErrContext;
 use labels::process::process_labels;
 use preprocess::eval::Context;
 use std::{env, error::Error, fs, path::PathBuf, process::exit};
@@ -37,17 +38,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     // Resolve labels to proper ZZT-OOP
-    let mut messages = vec![];
+    let ctx = ErrContext::default().with_file_path(&world_filename);
     for (i, mut board) in world.boards.iter_mut().enumerate() {
-        let mut result = process_labels(&mut board).unwrap();
-        for message in result.iter_mut() {
-            message.location.board = Some(i);
-            message.location.file_path = Some(world_filename.clone());
-        }
-        messages.extend(result);
+        let ctx = ctx.with_board(i);
+        process_labels(&mut board, &ctx);
     }
 
     // Print diagnostics
+    let messages = ctx.into_messages();
     for (i, message) in messages.iter().enumerate() {
         if i > 0 {
             println!();

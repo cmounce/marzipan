@@ -3,11 +3,7 @@ use std::ops::Range;
 use compact_str::CompactString;
 use grammar::Tag;
 
-use crate::{
-    error::{CompileMessage, Level, Location},
-    peg::ParseState,
-    world::Stat,
-};
+use crate::{error::Context, peg::ParseState, world::Stat};
 
 pub type ParsedStat = Vec<Chunk>;
 
@@ -28,7 +24,7 @@ pub struct LabelName {
     pub local: Option<CompactString>,
 }
 
-pub fn parse_stat_labels(stat: &Stat) -> (ParsedStat, Vec<CompileMessage>) {
+pub fn parse_stat_labels(stat: &Stat, ctx: &Context) -> ParsedStat {
     let code = &stat.code;
     let mut parser = ParseState::new(code);
     assert!(
@@ -37,20 +33,11 @@ pub fn parse_stat_labels(stat: &Stat) -> (ParsedStat, Vec<CompileMessage>) {
         code
     );
 
-    let mut messages = vec![];
     for cap in parser.walk_captures() {
         match cap.kind() {
             Tag::WarnTrailing => {
-                messages.push(CompileMessage {
-                    level: Level::Warning,
-                    message: "Trailing characters at end of line".into(),
-                    location: Location {
-                        file_path: None,
-                        board: None,
-                        stat: None,
-                        span: Some(cap.span()),
-                    },
-                });
+                ctx.with_span(cap.span())
+                    .warning("trailing characters at end of line");
             }
             _ => {}
         }
@@ -106,7 +93,7 @@ pub fn parse_stat_labels(stat: &Stat) -> (ParsedStat, Vec<CompileMessage>) {
     if last_index < code.len() {
         result.push(Chunk::Verbatim(code[last_index..code.len()].into()));
     }
-    (result, messages)
+    result
 }
 
 mod grammar {

@@ -1,8 +1,58 @@
-use std::{error::Error, fmt::Display, ops::Range};
+use std::{cell::RefCell, error::Error, fmt::Display, ops::Range, rc::Rc};
 
 use crate::world::World;
 
-pub type CompileResult = Result<Vec<CompileMessage>, Vec<CompileMessage>>;
+#[derive(Clone, Default)]
+pub struct Context {
+    messages: Rc<RefCell<Vec<CompileMessage>>>,
+    location: Location,
+}
+
+impl Context {
+    pub fn with_file_path(&self, s: &str) -> Self {
+        let mut result = self.clone();
+        result.location.file_path = Some(s.into());
+        result
+    }
+
+    pub fn with_board(&self, board: usize) -> Self {
+        let mut result = self.clone();
+        result.location.board = Some(board);
+        result
+    }
+
+    pub fn with_stat(&self, stat: usize) -> Self {
+        let mut result = self.clone();
+        result.location.stat = Some(stat);
+        result
+    }
+
+    pub fn with_span(&self, span: Range<usize>) -> Self {
+        let mut result = self.clone();
+        result.location.span = Some(span);
+        result
+    }
+
+    pub fn error(&self, message: &str) {
+        self.messages.borrow_mut().push(CompileMessage {
+            level: Level::Error,
+            message: message.into(),
+            location: self.location.clone(),
+        });
+    }
+
+    pub fn warning(&self, message: &str) {
+        self.messages.borrow_mut().push(CompileMessage {
+            level: Level::Warning,
+            message: message.into(),
+            location: self.location.clone(),
+        });
+    }
+
+    pub fn into_messages(self) -> Vec<CompileMessage> {
+        self.messages.take()
+    }
+}
 
 #[derive(Debug)]
 pub struct CompileMessage {
@@ -17,7 +67,7 @@ pub enum Level {
     Warning,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Location {
     pub file_path: Option<String>,
     pub board: Option<usize>,
@@ -28,8 +78,8 @@ pub struct Location {
 impl Display for CompileMessage {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let level = match self.level {
-            Level::Error => "Error",
-            Level::Warning => "Warning",
+            Level::Error => "error",
+            Level::Warning => "warning",
         };
         write!(f, "{}: {}", level, self.message)
     }
@@ -40,7 +90,7 @@ impl Error for CompileMessage {}
 impl CompileMessage {
     pub fn rich_format(&self, world: &World) -> String {
         format!(
-            "{}\n{}",
+            "{}\n  {}",
             self.to_string(),
             self.location.rich_format(&world)
         )
