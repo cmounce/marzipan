@@ -8,7 +8,9 @@ use super::{
     sanitize::Registry,
 };
 
-pub fn process_labels(board: &mut Board, ctx: &Context) {
+pub fn process_labels(board: &Board, ctx: &Context) -> Board {
+    let mut board = board.clone();
+
     // Parse stats into chunks
     let mut stats: Vec<ParsedStat> = board
         .stats
@@ -40,6 +42,8 @@ pub fn process_labels(board: &mut Board, ctx: &Context) {
             .collect();
         old_stat.code = new_code;
     }
+
+    board
 }
 
 /// Resolve ".local" labels to "name.local" form.
@@ -218,7 +222,7 @@ mod test {
 
     use crate::{
         error::Context,
-        world::{Board, Stat},
+        world::{Board, Stat, World},
     };
 
     use super::process_labels;
@@ -251,6 +255,12 @@ mod test {
         board
     }
 
+    fn world_from_text(path: &str) -> World {
+        let mut world = World::default();
+        world.boards.push(board_from_text(path));
+        world
+    }
+
     fn board_to_text(board: Board) -> String {
         let codes: Vec<_> = board.stats.into_iter().map(|stat| stat.code).collect();
         codes.join("---\n")
@@ -258,29 +268,45 @@ mod test {
 
     #[test]
     fn test_label_sanitization() {
-        let mut board = board_from_text("tests/labels/sanitize.txt");
-        let _ = process_labels(&mut board, &Context::new());
+        let board = board_from_text("tests/labels/sanitize.txt");
+        let board = process_labels(&board, &Context::new());
         assert_snapshot!(board_to_text(board));
     }
 
     #[test]
     fn test_anonymous_labels() {
-        let mut board = board_from_text("tests/labels/anonymous.txt");
-        let _ = process_labels(&mut board, &Context::new());
+        let board = board_from_text("tests/labels/anonymous.txt");
+        let board = process_labels(&board, &Context::new());
         assert_snapshot!(board_to_text(board));
     }
 
     #[test]
     fn test_local_labels() {
-        let mut board = board_from_text("tests/labels/local.txt");
-        let _ = process_labels(&mut board, &Context::new());
+        let board = board_from_text("tests/labels/local.txt");
+        let board = process_labels(&board, &Context::new());
         assert_snapshot!(board_to_text(board));
     }
 
     #[test]
     fn test_namespaces() {
-        let mut board = board_from_text("tests/labels/namespaces.txt");
-        let _ = process_labels(&mut board, &Context::new());
+        let board = board_from_text("tests/labels/namespaces.txt");
+        let board = process_labels(&board, &Context::new());
         assert_snapshot!(board_to_text(board));
+    }
+
+    #[test]
+    fn test_diagnostics() {
+        let world = world_from_text("tests/labels/diagnostics.txt");
+        let base_ctx = Context::new();
+        process_labels(
+            &world.boards[0],
+            &base_ctx.with_file_path("test.zzt").with_board(0),
+        );
+        let messages: Vec<String> = base_ctx
+            .into_messages()
+            .iter()
+            .map(|x| x.rich_format(&world))
+            .collect();
+        assert_snapshot!(messages.join("\n\n"));
     }
 }

@@ -77,7 +77,19 @@ impl<'a> Context<'a> {
 
     pub fn into_messages(self) -> Vec<CompileMessage> {
         match self {
-            Context::Base(refcell) => refcell.into_inner(),
+            Context::Base(refcell) => {
+                let mut messages = refcell.into_inner();
+                messages.sort_by_key(|msg| {
+                    let loc = &msg.location;
+                    (
+                        loc.file_path.as_ref().map(|x| x.clone()),
+                        loc.board,
+                        loc.stat,
+                        loc.span.as_ref().map(|s| s.start),
+                    )
+                });
+                messages
+            }
             _ => panic!("into_messages() may only be called on the base context"),
         }
     }

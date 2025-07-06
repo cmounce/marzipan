@@ -70,6 +70,7 @@ impl Error for LoadError {
     }
 }
 
+#[derive(Default)]
 pub struct World {
     pub ammo: i16,
     pub gems: i16,
@@ -88,6 +89,7 @@ pub struct World {
     pub boards: Vec<Board>,
 }
 
+#[derive(Clone)]
 pub struct Board {
     pub name: String,
     pub terrain: Vec<[u8; 2]>,
@@ -105,6 +107,7 @@ pub struct Board {
     pub stats: Vec<Stat>,
 }
 
+#[derive(Clone)]
 pub struct Stat {
     pub x: u8,
     pub y: u8,

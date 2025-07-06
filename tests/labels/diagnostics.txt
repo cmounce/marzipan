@@ -1,0 +1,16 @@
+@Trailing
+#end trailing text
+---
+@Valid anon
+#send @f
+:@
+#send @b
+---
+@Invalid anon
+#send @b
+:@
+#send @f
+---
+@Errors in sorted order
+#send @f
+#send @b

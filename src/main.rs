@@ -40,9 +40,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Resolve labels to proper ZZT-OOP
     let base_ctx = ErrContext::new();
     let ctx = base_ctx.with_file_path(&world_filename);
-    for (i, mut board) in world.boards.iter_mut().enumerate() {
+    for (i, board) in world.boards.iter_mut().enumerate() {
         let ctx = ctx.with_board(i);
-        process_labels(&mut board, &ctx);
+        *board = process_labels(&board, &ctx);
     }
 
     // Print diagnostics

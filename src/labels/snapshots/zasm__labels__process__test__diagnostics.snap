@@ -1,0 +1,46 @@
+---
+source: src/labels/process.rs
+expression: "messages.join(\"\\n\\n\")"
+---
+warning: trailing characters at end of line
+ => test.zzt -> Title screen -> @Trailing (1,1) -> line 2:5
+   |
+ 1 | @Trailing
+ 2 | #end trailing text
+   |     ^^^^^^^^^^^^^^
+
+error: backward reference needs an anonymous label
+ => test.zzt -> Title screen -> @Invalid anon (1,1) -> line 2:7
+   |
+ 1 | @Invalid anon
+ 2 | #send @b
+   |       ^^
+ 3 | :@
+ 4 | #send @f
+   |
+
+error: forward reference needs an anonymous label
+ => test.zzt -> Title screen -> @Invalid anon (1,1) -> line 4:7
+   |
+ 1 | @Invalid anon
+ 2 | #send @b
+ 3 | :@
+ 4 | #send @f
+   |       ^^
+
+error: forward reference needs an anonymous label
+ => test.zzt -> Title screen -> @Errors in sorted order (1,1) -> line 2:7
+   |
+ 1 | @Errors in sorted order
+ 2 | #send @f
+   |       ^^
+ 3 | #send @b
+   |
+
+error: backward reference needs an anonymous label
+ => test.zzt -> Title screen -> @Errors in sorted order (1,1) -> line 3:7
+   |
+ 1 | @Errors in sorted order
+ 2 | #send @f
+ 3 | #send @b
+   |       ^^
