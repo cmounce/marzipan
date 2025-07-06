@@ -166,7 +166,7 @@ fn anonymous_forward_pass(stats: &mut [ParsedStat], registry: &mut Registry, ctx
                             name.name = backward.clone();
                         } else {
                             ctx.with_span(name.span.clone())
-                                .error("backward reference @b without prior anonymous label :@");
+                                .error("backward reference needs an anonymous label");
                         }
                     }
                 }
@@ -200,7 +200,7 @@ fn anonymous_backward_pass(stats: &mut [ParsedStat], ctx: &Context) {
                             name.name = forward.clone();
                         } else {
                             ctx.with_span(name.span.clone())
-                                .error("forward reference @f without following anonymous label :@");
+                                .error("forward reference needs an anonymous label");
                         }
                     }
                 }

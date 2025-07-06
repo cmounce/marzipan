@@ -1,4 +1,4 @@
-use std::{cell::RefCell, error::Error, fmt::Display, ops::Range};
+use std::{cell::RefCell, collections::VecDeque, error::Error, fmt::Display, ops::Range};
 
 use crate::world::World;
 
@@ -118,46 +118,136 @@ impl Error for CompileMessage {}
 
 impl CompileMessage {
     pub fn rich_format(&self, world: &World) -> String {
-        format!(
-            "{}\n  {}",
-            self.to_string(),
-            self.location.rich_format(&world)
-        )
+        // Get base error message
+        let message = self.to_string();
+
+        // Build hierarchy string: world -> board -> stat -> span of code
+        let mut breadcrumbs = vec![];
+        let location = &self.location;
+        if let Some(path) = &location.file_path {
+            breadcrumbs.push(path.clone());
+        }
+        let board = location.board.map(|i| &world.boards[i]);
+        if let Some(board) = board {
+            breadcrumbs.push(board.name.clone());
+        }
+        let stat = board.and_then(|board| location.stat.map(|i| &board.stats[i]));
+        if let Some(stat) = stat {
+            let first_line = stat.code.lines().next();
+            let name = first_line.filter(|x| x.starts_with("@")).unwrap_or("stat");
+            let (x, y) = (stat.x, stat.y);
+            breadcrumbs.push(format!("{name} ({x},{y})"));
+        }
+        let span = stat.and_then(|stat| {
+            location
+                .span
+                .as_ref()
+                .map(|span| RichSpan::new(&span, &stat.code))
+        });
+        if let Some(ref span) = span {
+            let line = span.line_number;
+            let col = span.line_span.start + 1;
+            breadcrumbs.push(format!("line {line}:{col}"))
+        }
+        let breadcrumbs = format!(" => {}", breadcrumbs.join(" -> "));
+
+        // Build context block
+        let context = span.map(|span| {
+            let mut block = vec![];
+
+            // Add padding line at start
+            let last_line_number = span.nearby_lines.last().unwrap().0;
+            let number_width = last_line_number.to_string().len();
+            let prefix = format!(" {:number_width$} |", "");
+            block.push(prefix.clone());
+
+            // Add each of the context lines
+            let mut needs_end_padding = false;
+            for (line_number, line) in &span.nearby_lines {
+                block.push(format!(" {line_number:>number_width$} | {line}"));
+                needs_end_padding = true;
+
+                // Add highlight
+                if line_number == &span.line_number {
+                    block.push(format!(
+                        "{prefix} {}{}",
+                        " ".repeat(span.line_span.start),
+                        "^".repeat(span.line_span.len())
+                    ));
+                    needs_end_padding = false;
+                }
+            }
+
+            // Add padding line at end
+            if needs_end_padding {
+                block.push(prefix);
+            }
+
+            block.join("\n")
+        });
+
+        let mut parts = vec![message, breadcrumbs];
+        if let Some(context) = context {
+            parts.push(context);
+        }
+        parts.join("\n")
     }
 }
 
-impl Location {
-    pub fn rich_format(&self, world: &World) -> String {
-        let board = self.board.map(|i| &world.boards[i]);
-        let stat = self.stat.and_then(|i| board.map(|b| &b.stats[i]));
+struct RichSpan<'a> {
+    line_number: usize,
+    line_span: Range<usize>,
+    nearby_lines: Vec<(usize, &'a str)>,
+}
 
-        let mut parts: Vec<Option<String>> = vec![];
-        parts.push(self.file_path.clone());
-        parts.push(board.map(|board| board.name.clone()));
-        parts.push(stat.map(|stat| format!("stat({},{})", stat.x, stat.y)));
-        parts.push(self.span.as_ref().and_then(|span| {
-            stat.map(|stat| {
-                let mut line = 1;
-                let mut col = 1;
-                for c in (&stat.code[0..span.start]).chars() {
-                    if c == '\n' {
-                        line += 1;
-                        col = 1;
-                    } else {
-                        col += 1;
-                    }
-                }
-                format!("line {line}, column {col}")
-            })
-        }));
+impl<'a> RichSpan<'a> {
+    fn new(span: &Range<usize>, code: &'a str) -> Self {
+        // Track byte ranges and line numbers for each line
+        let mut offset = 0;
+        let mut current_line_number = 0;
+        let mut lines = code.lines().map(|line| {
+            let end_offset = offset + line.len() + 1;
+            let range = Range {
+                start: offset,
+                end: end_offset,
+            };
+            offset = end_offset;
+            current_line_number += 1;
+            (range, (current_line_number, line))
+        });
 
-        while parts.len() > 0 && parts[parts.len() - 1].is_none() {
-            parts.pop();
+        // Find the line where the span starts.
+        // While we search, keep track of the immediately preceding lines.
+        let num_context_lines = 3;
+        let mut recent = VecDeque::with_capacity(num_context_lines * 2 + 1);
+        let mut found_line_number = None;
+        let mut found_line_span = None;
+        for (range, numbered_line) in lines.by_ref() {
+            if recent.len() > num_context_lines {
+                recent.pop_front();
+            }
+            recent.push_back(numbered_line);
+            if range.contains(&span.start) {
+                found_line_number = Some(numbered_line.0);
+                let offset = range.start;
+                found_line_span = Some(Range {
+                    start: span.start - offset,
+                    end: span.end - offset,
+                });
+                break;
+            }
         }
-        let parts: Vec<_> = parts
-            .into_iter()
-            .map(|x| x.unwrap_or("???".into()))
-            .collect();
-        parts.join(", ")
+        let found_line_number = found_line_number.expect("span outside range of code");
+        let found_line_span = found_line_span.unwrap();
+
+        // Gather following context lines
+        recent.extend(lines.take(num_context_lines).map(|(_, line)| line));
+        recent.make_contiguous();
+
+        Self {
+            line_number: found_line_number,
+            line_span: found_line_span,
+            nearby_lines: recent.into_iter().collect(),
+        }
     }
 }
