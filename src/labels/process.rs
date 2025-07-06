@@ -20,7 +20,7 @@ pub fn process_labels(board: &Board, ctx: &Context) -> Board {
         .collect();
     let mut registry = Registry::new();
 
-    resolve_local_labels(&mut stats);
+    resolve_local_labels(&mut stats, ctx);
     assign_named_labels(&mut stats, &mut registry);
 
     // Assign names to anonymous labels
@@ -47,8 +47,10 @@ pub fn process_labels(board: &Board, ctx: &Context) -> Board {
 }
 
 /// Resolve ".local" labels to "name.local" form.
-fn resolve_local_labels(stats: &mut [ParsedStat]) {
-    for stat in stats.iter_mut() {
+fn resolve_local_labels(stats: &mut [ParsedStat], ctx: &Context) {
+    for (i, stat) in stats.iter_mut().enumerate() {
+        let ctx = ctx.with_stat(i);
+
         // Helper: Generate unique section strings like "touch$0"
         let mut i = 0;
         let mut make_section_id = |label_name: &str| -> CompactString {
@@ -89,6 +91,11 @@ fn resolve_local_labels(stats: &mut [ParsedStat]) {
                             namespace_to_section
                                 .insert(label.namespace.clone(), make_section_id(&label.name));
                         }
+                    } else {
+                        // User specified both a section name and a local name ("name.local").
+                        // This isn't allowed because of issues around resolving the section ID.
+                        ctx.with_span(label.span.clone())
+                            .error("local labels with section names not supported");
                     }
                 }
                 _ => {}

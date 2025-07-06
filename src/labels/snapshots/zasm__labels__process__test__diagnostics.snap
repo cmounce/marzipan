@@ -44,3 +44,50 @@ error: backward reference needs an anonymous label
  2 | #send @f
  3 | #send @b
    |       ^^
+
+error: message targets not allowed for anonymous labels
+ => test.zzt -> Title screen -> @Disallowed targets (1,1) -> line 3:2
+   |
+ 1 | @Disallowed targets
+ 2 | :@
+ 3 | #self:@b
+   |  ^^^^
+ 4 | #others:@f
+ 5 | #all:.local
+ 6 | :@
+   |
+
+error: message targets not allowed for anonymous labels
+ => test.zzt -> Title screen -> @Disallowed targets (1,1) -> line 4:2
+   |
+ 1 | @Disallowed targets
+ 2 | :@
+ 3 | #self:@b
+ 4 | #others:@f
+   |  ^^^^^^
+ 5 | #all:.local
+ 6 | :@
+ 7 | :.local
+   |
+
+error: message targets not supported for local labels
+ => test.zzt -> Title screen -> @Disallowed targets (1,1) -> line 5:2
+   |
+ 2 | :@
+ 3 | #self:@b
+ 4 | #others:@f
+ 5 | #all:.local
+   |  ^^^
+ 6 | :@
+ 7 | :.local
+   |
+
+error: local labels with section names not supported
+ => test.zzt -> Title screen -> @Locals with section names (1,1) -> line 3:2
+   |
+ 1 | @Locals with section names
+ 2 | :touch
+ 3 | #touch.skip
+   |  ^^^^^^^^^^
+ 4 | :.skip
+   |

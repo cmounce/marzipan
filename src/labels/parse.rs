@@ -52,6 +52,28 @@ pub fn parse_stat_labels(stat: &Stat, ctx: &Context) -> ParsedStat {
             Tag::Reference => {
                 let label = cap.children().find(|c| c.kind() == Tag::Label).unwrap();
                 label_captures.push((Tag::Reference, label));
+
+                // Detect invalid recipients.
+                // This should probably happen later in processing, but
+                // we'd need an AST that can track spans for message recipients.
+                let mut recipient = None;
+                let (mut anon, mut local) = (false, false);
+                for child in cap.walk_children() {
+                    match child.kind() {
+                        Tag::Anon => anon = true,
+                        Tag::Local => local = true,
+                        Tag::Recipient => recipient = Some(child),
+                        _ => {}
+                    }
+                }
+                if let Some(recipient) = recipient {
+                    let ctx = ctx.with_span(recipient.span());
+                    if anon {
+                        ctx.error("message targets not allowed for anonymous labels");
+                    } else if local {
+                        ctx.error("message targets not supported for local labels");
+                    }
+                }
             }
             _ => {}
         }

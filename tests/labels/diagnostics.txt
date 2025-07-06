@@ -14,3 +14,16 @@
 @Errors in sorted order
 #send @f
 #send @b
+---
+@Disallowed targets
+:@
+#self:@b
+#others:@f
+#all:.local
+:@
+:.local
+---
+@Locals with section names
+:touch
+#touch.skip
+:.skip
