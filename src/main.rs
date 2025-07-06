@@ -38,14 +38,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     // Resolve labels to proper ZZT-OOP
-    let ctx = ErrContext::default().with_file_path(&world_filename);
+    let base_ctx = ErrContext::new();
+    let ctx = base_ctx.with_file_path(&world_filename);
     for (i, mut board) in world.boards.iter_mut().enumerate() {
         let ctx = ctx.with_board(i);
         process_labels(&mut board, &ctx);
     }
 
     // Print diagnostics
-    let messages = ctx.into_messages();
+    let messages = base_ctx.into_messages();
     for (i, message) in messages.iter().enumerate() {
         if i > 0 {
             println!();

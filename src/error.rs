@@ -1,56 +1,85 @@
-use std::{cell::RefCell, error::Error, fmt::Display, ops::Range, rc::Rc};
+use std::{cell::RefCell, error::Error, fmt::Display, ops::Range};
 
 use crate::world::World;
 
-#[derive(Clone, Default)]
-pub struct Context {
-    messages: Rc<RefCell<Vec<CompileMessage>>>,
-    location: Location,
+pub enum Context<'a> {
+    Base(Box<RefCell<Vec<CompileMessage>>>),
+    With(&'a Context<'a>, ContextInfo<'a>),
 }
 
-impl Context {
-    pub fn with_file_path(&self, s: &str) -> Self {
-        let mut result = self.clone();
-        result.location.file_path = Some(s.into());
-        result
+pub enum ContextInfo<'a> {
+    FilePath(&'a str),
+    Board(usize),
+    Stat(usize),
+    Span(Range<usize>),
+}
+
+impl<'a> Context<'a> {
+    pub fn new() -> Self {
+        Self::Base(Box::new(RefCell::new(vec![])))
     }
 
-    pub fn with_board(&self, board: usize) -> Self {
-        let mut result = self.clone();
-        result.location.board = Some(board);
-        result
+    pub fn with_file_path(&'a self, s: &'a str) -> Self {
+        Self::With(self, ContextInfo::FilePath(s))
     }
 
-    pub fn with_stat(&self, stat: usize) -> Self {
-        let mut result = self.clone();
-        result.location.stat = Some(stat);
-        result
+    pub fn with_board(&'a self, i: usize) -> Self {
+        Self::With(self, ContextInfo::Board(i))
     }
 
-    pub fn with_span(&self, span: Range<usize>) -> Self {
-        let mut result = self.clone();
-        result.location.span = Some(span);
-        result
+    pub fn with_stat(&'a self, i: usize) -> Self {
+        Self::With(self, ContextInfo::Stat(i))
+    }
+
+    pub fn with_span(&'a self, r: Range<usize>) -> Self {
+        Self::With(self, ContextInfo::Span(r))
+    }
+
+    fn store(&self, mut message: CompileMessage) {
+        match self {
+            Context::Base(refcell) => refcell.borrow_mut().push(message),
+            Context::With(parent, info) => {
+                let location = &mut message.location;
+                match info {
+                    ContextInfo::FilePath(s) => {
+                        location.file_path.get_or_insert((*s).into());
+                    }
+                    ContextInfo::Board(i) => {
+                        location.board.get_or_insert(*i);
+                    }
+                    ContextInfo::Stat(i) => {
+                        location.stat.get_or_insert(*i);
+                    }
+                    ContextInfo::Span(r) => {
+                        location.span.get_or_insert(r.clone());
+                    }
+                };
+                parent.store(message);
+            }
+        }
     }
 
     pub fn error(&self, message: &str) {
-        self.messages.borrow_mut().push(CompileMessage {
+        self.store(CompileMessage {
             level: Level::Error,
             message: message.into(),
-            location: self.location.clone(),
+            location: Location::default(),
         });
     }
 
     pub fn warning(&self, message: &str) {
-        self.messages.borrow_mut().push(CompileMessage {
+        self.store(CompileMessage {
             level: Level::Warning,
             message: message.into(),
-            location: self.location.clone(),
+            location: Location::default(),
         });
     }
 
     pub fn into_messages(self) -> Vec<CompileMessage> {
-        self.messages.take()
+        match self {
+            Context::Base(refcell) => refcell.into_inner(),
+            _ => panic!("into_messages() may only be called on the base context"),
+        }
     }
 }
 

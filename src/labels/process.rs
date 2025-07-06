@@ -259,28 +259,28 @@ mod test {
     #[test]
     fn test_label_sanitization() {
         let mut board = board_from_text("tests/labels/sanitize.txt");
-        let _ = process_labels(&mut board, &Context::default());
+        let _ = process_labels(&mut board, &Context::new());
         assert_snapshot!(board_to_text(board));
     }
 
     #[test]
     fn test_anonymous_labels() {
         let mut board = board_from_text("tests/labels/anonymous.txt");
-        let _ = process_labels(&mut board, &Context::default());
+        let _ = process_labels(&mut board, &Context::new());
         assert_snapshot!(board_to_text(board));
     }
 
     #[test]
     fn test_local_labels() {
         let mut board = board_from_text("tests/labels/local.txt");
-        let _ = process_labels(&mut board, &Context::default());
+        let _ = process_labels(&mut board, &Context::new());
         assert_snapshot!(board_to_text(board));
     }
 
     #[test]
     fn test_namespaces() {
         let mut board = board_from_text("tests/labels/namespaces.txt");
-        let _ = process_labels(&mut board, &Context::default());
+        let _ = process_labels(&mut board, &Context::new());
         assert_snapshot!(board_to_text(board));
     }
 }
