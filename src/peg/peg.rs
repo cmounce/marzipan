@@ -117,7 +117,7 @@ pub mod backend {
 
         fn literal_i(&mut self, s: &str) -> bool {
             let range = self.offset..(self.offset + s.len());
-            if range.end <= self.input.len() && self.input[range].eq_ignore_ascii_case(s) {
+            if self.input.is_char_boundary(range.end) && self.input[range].eq_ignore_ascii_case(s) {
                 self.offset += s.len();
                 true
             } else {
@@ -238,6 +238,9 @@ mod tests {
         hex_config = "let " var_name " = 0x" ('a'..'f' / '0'..'9')+;
         var_name = "foo" / "bar"; // case must match
 
+        @icase
+        may_contain_foo = ("foo" / ANY)+;
+
         email_text = (!email ANY / email)*;
         email = #Email:(#User:user "@" #Domain:domain);
         user = ('a'..'z'i)+;
@@ -316,6 +319,7 @@ mod tests {
         assert!(parse(quoted, r#""\"""#));
         assert!(parse(quoted, r#""foo \"bar\" baz""#));
         assert!(parse(quoted, r#""C:\\>""#));
+        assert!(parse(quoted, r#""ñon-äscii""#));
 
         assert!(!parse(quoted, r#""no end"#));
         assert!(!parse(quoted, r#""foo " bar""#));
@@ -344,6 +348,18 @@ mod tests {
     fn test_icase_eoi() {
         assert!(parse(long_icase_str, "FOO BAR BAZ"));
         assert!(!parse(long_icase_str, "FOO BAR BA"));
+    }
+
+    #[test]
+    fn test_icase_literal_multibyte() {
+        // Testing failed matches of a icase literal against multibyte characters,
+        // where the end of the literal doesn't fall on a character boundary.
+        // First, make sure the rule works for ASCII input:
+        assert!(parse(may_contain_foo, "==foo=="));
+        assert!(parse(may_contain_foo, "==bar=="));
+
+        // Then force a comparison where a 3-byte slice would split a multibyte char:
+        assert!(parse(may_contain_foo, "....♥")); // dots force an eventual misalignment
     }
 
     #[test]
