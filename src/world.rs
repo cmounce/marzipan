@@ -363,15 +363,15 @@ impl Stat {
         result.push_padding(4);
         result.push_i16(self.instruction_pointer);
         // TODO: more safety around valid bind-indexes (positive? negative?)
+        let code_bytes = encode_multiline(&self.code).unwrap();
         result.push_i16(if self.bind_index < 0 {
             self.bind_index
         } else {
-            self.code.len() as i16
+            code_bytes.len() as i16
         });
         result.push_padding(8);
         if self.bind_index >= 0 {
             // TODO: more safety around bind-index XOR code
-            let code_bytes = encode_multiline(&self.code).unwrap();
             result.extend_from_slice(&code_bytes);
         }
         result
