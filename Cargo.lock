@@ -9,20 +9,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e16d2d3311acee920a9eb8d33b8cbc1787ce4a264e85f964c2404b969bdcd487"
 
 [[package]]
-name = "assembler"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "codepage-437",
- "compact_str",
- "insta",
- "lexopt",
- "nom",
- "peg_macro",
- "rustc-hash",
-]
-
-[[package]]
 name = "castaway"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -142,6 +128,20 @@ name = "libc"
 version = "0.2.174"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1171693293099992e19cddea4e8b849964e9846f4acee11b3948bcc337be8776"
+
+[[package]]
+name = "marzipan"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "codepage-437",
+ "compact_str",
+ "insta",
+ "lexopt",
+ "nom",
+ "peg_macro",
+ "rustc-hash",
+]
 
 [[package]]
 name = "memchr"
