@@ -10,7 +10,7 @@ anyhow = "1.0.86"
 codepage-437 = "0.1.0"
 peg_macro = { path = "./peg_macro"}
 insta = "1.39.0"
-nom = "7.1.3"
+nom = "8.0.0"
 compact_str = "0.9.0"
 rustc-hash = "2.1.1"
 lexopt = "0.3.1"

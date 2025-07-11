@@ -7,7 +7,6 @@ use nom::{
     error::{ErrorKind, ParseError},
     multi::count,
     number::complete::{le_i16, le_u8, le_u16},
-    sequence::tuple,
 };
 
 use crate::encoding::{decode_multiline, decode_oneline, encode_multiline, encode_oneline};
@@ -128,14 +127,14 @@ pub struct Stat {
 
 impl World {
     pub fn from_bytes(bytes: &[u8]) -> Result<World, LoadError> {
-        let (input, (_, num_boards)) = tuple((tag([0xff, 0xff]), le_i16)).parse(bytes)?;
+        let (input, (_, num_boards)) = (tag(&[0xff, 0xff][..]), le_i16).parse(bytes)?;
         let (input, (ammo, gems, keys)) =
-            tuple((le_i16, le_i16, count(bool_u8, 7))).parse(input)?;
+            (le_i16, le_i16, count(bool_u8, 7)).parse(input)?;
         let (input, (health, starting_board, torches, torch_cycles, energizer_cycles)) =
-            tuple((le_i16, le_i16, le_i16, le_i16, le_i16)).parse(input)?;
-        let (input, (_, score, world_name)) = tuple((take(2usize), le_i16, pstring(20)))(input)?;
+            (le_i16, le_i16, le_i16, le_i16, le_i16).parse(input)?;
+        let (input, (_, score, world_name)) = (take(2usize), le_i16, pstring(20)).parse(input)?;
         let (input, flags) = count(pstring(20), 10).parse(input)?;
-        let (_input, (time, time_ticks, locked)) = tuple((le_i16, le_i16, bool_u8)).parse(input)?;
+        let (_input, (time, time_ticks, locked)) = (le_i16, le_i16, bool_u8).parse(input)?;
 
         // Rest of header is padding; fast-forward starting from original input
         let (input, _) = take(512usize).parse(bytes)?;
@@ -214,7 +213,7 @@ impl Board {
         let mut input = input;
         let mut terrain = Vec::with_capacity(NUM_TILES);
         while terrain.len() < NUM_TILES {
-            let (next_input, (count, element, color)) = tuple((le_u8, le_u8, le_u8))(input)?;
+            let (next_input, (count, element, color)) = (le_u8, le_u8, le_u8).parse(input)?;
             input = next_input;
             let count: u32 = if count == 0 { 256 } else { count.into() };
             for _ in 0..count {
@@ -226,11 +225,11 @@ impl Board {
         }
 
         // Read board info
-        let (input, (max_shots, is_dark)) = tuple((le_u8, bool_u8))(input)?;
+        let (input, (max_shots, is_dark)) = (le_u8, bool_u8).parse(input)?;
         let (input, (board_n, board_s, board_w, board_e)) =
-            tuple((le_u8, le_u8, le_u8, le_u8))(input)?;
-        let (input, (reenter_when_zapped, message)) = tuple((bool_u8, pstring(58)))(input)?;
-        let (input, (enter_x, enter_y, time_limit)) = tuple((le_u8, le_u8, le_i16))(input)?;
+            (le_u8, le_u8, le_u8, le_u8).parse(input)?;
+        let (input, (reenter_when_zapped, message)) = (bool_u8, pstring(58)).parse(input)?;
+        let (input, (enter_x, enter_y, time_limit)) = (le_u8, le_u8, le_i16).parse(input)?;
         let (input, _) = take(16usize)(input)?;
 
         // Read stats
@@ -239,7 +238,7 @@ impl Board {
         if num_stats < 0 {
             return Err("cannot have a negative number of stats".into());
         }
-        let (_input, stats) = count(Stat::from_bytes, num_stats as usize)(input)?;
+        let (_input, stats) = count(Stat::from_bytes, num_stats as usize).parse(input)?;
 
         Ok(Board {
             name,
@@ -315,12 +314,12 @@ impl Board {
 
 impl Stat {
     pub fn from_bytes(input: &[u8]) -> IResult<&[u8], Self, LoadError> {
-        let (input, (x, y, x_step, y_step)) = tuple((le_u8, le_u8, le_i16, le_i16))(input)?;
-        let (input, (cycle, p1, p2, p3)) = tuple((le_i16, le_u8, le_u8, le_u8))(input)?;
-        let (input, (follower, leader)) = tuple((le_i16, le_i16))(input)?;
-        let (input, (under_element, under_color)) = tuple((le_u8, le_u8))(input)?;
+        let (input, (x, y, x_step, y_step)) = (le_u8, le_u8, le_i16, le_i16).parse(input)?;
+        let (input, (cycle, p1, p2, p3)) = (le_i16, le_u8, le_u8, le_u8).parse(input)?;
+        let (input, (follower, leader)) = (le_i16, le_i16).parse(input)?;
+        let (input, (under_element, under_color)) = (le_u8, le_u8).parse(input)?;
         let (input, _) = take(4usize)(input)?;
-        let (input, (instruction_pointer, length)) = tuple((le_i16, le_i16))(input)?;
+        let (input, (instruction_pointer, length)) = (le_i16, le_i16).parse(input)?;
         let (input, _) = take(8usize)(input)?;
         let (input, code_bytes) = take(0.max(length) as usize)(input)?;
         let code = decode_multiline(&code_bytes);
@@ -387,7 +386,7 @@ fn pstring(cap: u8) -> impl Fn(&[u8]) -> IResult<&[u8], Vec<u8>, LoadError> {
     move |input: &[u8]| -> IResult<&[u8], Vec<u8>, LoadError> {
         let (input, len) = le_u8(input)?;
         if len >= cap {
-            return fail(input);
+            return fail().parse(input);
         }
         let (input, data) = take(len)(input)?;
         let (input, _) = take(cap - len)(input)?;
