@@ -23,7 +23,11 @@
 :@
 :.local
 ---
-@Locals with section names
+@Local label definitions with section names
+'these are okay
 :touch
-#touch.skip
 :.skip
+#touch.skip
+'
+'this is not
+:touch.skip

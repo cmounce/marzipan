@@ -84,7 +84,9 @@ fn main() -> Result<()> {
     let ctx = base_ctx.with_file_path(&input_filename);
     for (i, board) in world.boards.iter_mut().enumerate() {
         let ctx = ctx.with_board(i);
-        *board = process_labels(&board, &ctx);
+        if let Some(processed_board) = process_labels(&board, &ctx) {
+            *board = processed_board;
+        }
     }
 
     // Print diagnostics

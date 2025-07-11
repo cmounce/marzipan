@@ -75,6 +75,13 @@ impl<'a> Context<'a> {
         });
     }
 
+    pub fn any_errors(&self) -> bool {
+        match self {
+            Context::Base(refcell) => refcell.borrow().iter().any(|x| x.level == Level::Error),
+            Context::With(parent, _info) => parent.any_errors(),
+        }
+    }
+
     pub fn into_messages(self) -> Vec<CompileMessage> {
         match self {
             Context::Base(refcell) => {
@@ -102,7 +109,7 @@ pub struct CompileMessage {
     pub location: Location,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum Level {
     Error,
     Warning,

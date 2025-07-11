@@ -49,4 +49,30 @@ Trying to sell you some torches...
 #zap .z
 #.z
 :.z
-
+---
+'Addressing labels with section.local
+:touch
+:.foo
+#end
+:touch
+:.foo
+#end
+:shot
+'sends to the first one:
+#touch.foo
+---
+@alice
+:shared
+'this is the 1st section named "shared"
+'but its local should correspond with @bob's 2nd "shared"
+:.local
+#end
+:shared
+---
+@bob
+:shared
+#end
+:shared
+'this is the 2nd section named "shared"
+'but its local should correspond with @alice's 1st "shared"
+:.local

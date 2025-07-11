@@ -8,7 +8,7 @@ use super::{
     sanitize::Registry,
 };
 
-pub fn process_labels(board: &Board, ctx: &Context) -> Board {
+pub fn process_labels(board: &Board, ctx: &Context) -> Option<Board> {
     let mut board = board.clone();
 
     // Parse stats into chunks
@@ -20,10 +20,17 @@ pub fn process_labels(board: &Board, ctx: &Context) -> Board {
         .collect();
     let mut registry = Registry::new();
 
+    // Expand ".local" labels to full "section.local" form.
     resolve_local_labels(&mut stats, ctx);
-    assign_named_labels(&mut stats, &mut registry);
 
-    // Assign names to anonymous labels
+    // Sanitize all non-anonymous labels.
+    // This condenses name strings like "namespace~name$1.local" down to
+    // something short and valid for ZZT-OOP, e.g., "local_".
+    sanitize_named_labels(&mut stats, &mut registry);
+
+    // Replace anonymous labels with short names.
+    // This happens after sanitization so we know which short names are available to use.
+    // Two passes are needed because anonymous references can point either forward or backward.
     anonymous_forward_pass(&mut stats, &mut registry, ctx);
     anonymous_backward_pass(&mut stats, ctx);
 
@@ -43,7 +50,7 @@ pub fn process_labels(board: &Board, ctx: &Context) -> Board {
         old_stat.code = new_code;
     }
 
-    board
+    (!ctx.any_errors()).then_some(board)
 }
 
 /// Resolve ".local" labels to "name.local" form.
@@ -51,15 +58,8 @@ fn resolve_local_labels(stats: &mut [ParsedStat], ctx: &Context) {
     for (i, stat) in stats.iter_mut().enumerate() {
         let ctx = ctx.with_stat(i);
 
-        // Helper: Generate unique section strings like "touch$0"
-        let mut i = 0;
-        let mut make_section_id = |label_name: &str| -> CompactString {
-            let result = format!("{}${}", &label_name, i);
-            i += 1;
-            result.into()
-        };
-
-        let mut namespace_to_section: FxHashMap<Option<CompactString>, CompactString> =
+        // Keep a separate resolver for each namespace
+        let mut resolvers: FxHashMap<Option<CompactString>, LocalLabelResolver> =
             FxHashMap::default();
 
         for chunk in stat.iter_mut() {
@@ -69,33 +69,22 @@ fn resolve_local_labels(stats: &mut [ParsedStat], ctx: &Context) {
                     is_anon: false,
                     name: label,
                 } => {
-                    // Handle cases where either one of (section name, label) is missing.
-                    // If both are present ("name.local") then the label is already fully resolved
-                    // and there is nothing to do.
-                    if label.name.is_empty() {
-                        // Expand :.local to :name.local
-                        assert!(label.local.is_some());
-                        label.name = if let Some(section) =
-                            namespace_to_section.get(&label.namespace)
-                        {
-                            section.clone()
-                        } else {
-                            let section = make_section_id("");
-                            namespace_to_section.insert(label.namespace.clone(), section.clone());
-                            section
+                    let resolver = resolvers.entry(label.namespace.clone()).or_default();
+                    let is_definition = !*is_ref;
+                    if let Some(local) = &label.local {
+                        if label.name.is_empty() {
+                            // Local that needs to be resolved, such as ":.foo" or "#send .foo"
+                            label.name = resolver.get_section_prefix(&local)
+                        } else if is_definition {
+                            // Illegal local label definition, such as ":touch.foo"
+                            // _References_ to local labels may specify a section name: "#send touch.foo".
+                            // But when a local is _defined_, the section name must always be inferred.
+                            ctx.with_span(label.span.clone())
+                                .error("local label definitions cannot specify a section name");
                         }
-                    } else if label.local.is_none() {
-                        // Interpret label :name as start of new section.
-                        // Only label definitions do this; label references have no effect.
-                        if !*is_ref {
-                            namespace_to_section
-                                .insert(label.namespace.clone(), make_section_id(&label.name));
-                        }
-                    } else {
-                        // User specified both a section name and a local name ("name.local").
-                        // This isn't allowed because of issues around resolving the section ID.
-                        ctx.with_span(label.span.clone())
-                            .error("local labels with section names not supported");
+                    } else if is_definition {
+                        // Top-level label definition, such as ":touch"
+                        resolver.start_new_section(&label.name);
                     }
                 }
                 _ => {}
@@ -104,8 +93,59 @@ fn resolve_local_labels(stats: &mut [ParsedStat], ctx: &Context) {
     }
 }
 
+#[derive(Default)]
+struct LocalLabelResolver {
+    current_section: CompactString,
+    current_section_index: usize,
+    pair_info: FxHashMap<(CompactString, CompactString), LocalLabelInfo>,
+}
+
+struct LocalLabelInfo {
+    last_section_index: usize,
+    num_sections: usize,
+}
+
+impl<'a> LocalLabelResolver {
+    /// Record the start of a new section, e.g., `touch`.
+    ///
+    /// This is called for each occurence of a top-level label; if the same
+    /// label name appears multiple times, that creates multiple sections.
+    fn start_new_section(&mut self, section: &str) {
+        self.current_section = section.into();
+        self.current_section_index += 1;
+    }
+
+    /// Generate a distinct section string (e.g., `touch$1`) for a local label.
+    ///
+    /// The output depends not just on the section's and local's names, but also
+    /// the number of previous sections that have had that section-local combo:
+    ///
+    /// - The first time `.foo` appears in a `touch` section, all instances of
+    ///     `.foo` within that section resolve to `touch.foo`.
+    /// - But if there's a _second_ `touch` label, any instances of `.foo` within
+    ///     _that_ section must resolve to a distinct name: `touch$1.foo`.
+    fn get_section_prefix(&mut self, local: &str) -> CompactString {
+        let key = (self.current_section.clone(), local.into());
+        let info = self.pair_info.entry(key).or_insert_with(|| LocalLabelInfo {
+            last_section_index: self.current_section_index,
+            num_sections: 1,
+        });
+        if info.last_section_index != self.current_section_index {
+            info.last_section_index = self.current_section_index;
+            info.num_sections += 1;
+        }
+        let mut result = self.current_section.clone();
+        if info.num_sections > 1 {
+            let disambiguator = info.num_sections - 1;
+            result.push('$');
+            result.push_str(&disambiguator.to_string());
+        }
+        result
+    }
+}
+
 /// Assign sanitized names to all of the named labels.
-fn assign_named_labels(stats: &mut [ParsedStat], registry: &mut Registry) {
+fn sanitize_named_labels(stats: &mut [ParsedStat], registry: &mut Registry) {
     for stat in stats.iter_mut() {
         for chunk in stat.iter_mut() {
             match chunk {
@@ -140,6 +180,8 @@ fn anonymous_forward_pass(stats: &mut [ParsedStat], registry: &mut Registry, ctx
     let mut label_names = vec![];
 
     for (stat_index, stat) in stats.iter_mut().enumerate() {
+        let ctx = ctx.with_stat(stat_index);
+
         // Helper: Get the next label name that hasn't been used in this object yet
         let mut i = 0;
         let mut get_next_name = || -> CompactString {
@@ -155,7 +197,6 @@ fn anonymous_forward_pass(stats: &mut [ParsedStat], registry: &mut Registry, ctx
         let mut namespace_to_latest: FxHashMap<Option<CompactString>, CompactString> =
             FxHashMap::default();
 
-        let ctx = ctx.with_stat(stat_index);
         for chunk in stat.iter_mut() {
             match chunk {
                 Chunk::Label {
@@ -190,8 +231,9 @@ fn anonymous_forward_pass(stats: &mut [ParsedStat], registry: &mut Registry, ctx
 /// Resolve anonymous forward references to their label names.
 fn anonymous_backward_pass(stats: &mut [ParsedStat], ctx: &Context) {
     for (stat_index, stat) in stats.iter_mut().enumerate() {
-        let mut namespace_to_latest = FxHashMap::default();
         let ctx = ctx.with_stat(stat_index);
+
+        let mut namespace_to_latest = FxHashMap::default();
         for chunk in stat.iter_mut().rev() {
             match chunk {
                 Chunk::Label {
@@ -276,28 +318,28 @@ mod test {
     #[test]
     fn test_label_sanitization() {
         let board = board_from_text("tests/labels/sanitize.txt");
-        let board = process_labels(&board, &Context::new());
+        let board = process_labels(&board, &Context::new()).unwrap();
         assert_snapshot!(board_to_text(board));
     }
 
     #[test]
     fn test_anonymous_labels() {
         let board = board_from_text("tests/labels/anonymous.txt");
-        let board = process_labels(&board, &Context::new());
+        let board = process_labels(&board, &Context::new()).unwrap();
         assert_snapshot!(board_to_text(board));
     }
 
     #[test]
     fn test_local_labels() {
         let board = board_from_text("tests/labels/local.txt");
-        let board = process_labels(&board, &Context::new());
+        let board = process_labels(&board, &Context::new()).unwrap();
         assert_snapshot!(board_to_text(board));
     }
 
     #[test]
     fn test_namespaces() {
         let board = board_from_text("tests/labels/namespaces.txt");
-        let board = process_labels(&board, &Context::new());
+        let board = process_labels(&board, &Context::new()).unwrap();
         assert_snapshot!(board_to_text(board));
     }
 

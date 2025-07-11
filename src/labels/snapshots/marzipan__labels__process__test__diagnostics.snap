@@ -82,12 +82,11 @@ error: message targets not supported for local labels
  7 | :.local
    |
 
-error: local labels with section names not supported
- => test.zzt -> Title screen -> @Locals with section names (1,1) -> line 3:2
+error: local label definitions cannot specify a section name
+ => test.zzt -> Title screen -> @Local label definitions with section names (1,1) -> line 8:2
    |
- 1 | @Locals with section names
- 2 | :touch
- 3 | #touch.skip
+ 5 | #touch.skip
+ 6 | '
+ 7 | 'this is not
+ 8 | :touch.skip
    |  ^^^^^^^^^^
- 4 | :.skip
-   |
