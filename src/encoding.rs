@@ -1,7 +1,8 @@
 use anyhow::{Result, anyhow};
 use codepage_437::CP437_WINGDINGS;
 
-// Serialize multi-line content with CR-terminated lines
+/// Serialize a multi-line code string for an object or a scroll.
+/// Uses ZZT's convention of CR-terminated lines.
 pub fn encode_multiline(input: &str) -> Result<Vec<u8>> {
     input
         .chars()
@@ -17,6 +18,7 @@ pub fn encode_multiline(input: &str) -> Result<Vec<u8>> {
         .collect()
 }
 
+/// Deserialize a multi-line code string.
 pub fn decode_multiline(input: &[u8]) -> String {
     input
         .iter()
@@ -30,6 +32,8 @@ pub fn decode_multiline(input: &[u8]) -> String {
         .collect()
 }
 
+/// Serialize a single-line string for a board title.
+/// Newlines cannot be encoded because ZZT interprets them as dingbats (♪).
 pub fn encode_oneline(input: &str) -> Result<Vec<u8>> {
     input
         .chars()
@@ -41,6 +45,7 @@ pub fn encode_oneline(input: &str) -> Result<Vec<u8>> {
         .collect()
 }
 
+/// Deserialize a board title.
 pub fn decode_oneline(input: &[u8]) -> String {
     input.iter().map(|&x| CP437_WINGDINGS.decode(x)).collect()
 }
@@ -86,12 +91,12 @@ mod tests {
     }
 
     #[test]
-    fn byte_13_to_wingding() {
+    fn byte_13_to_dingbat() {
         // Code is allowed to have newlines
         let bytes = serialize_code("ABC\nDEF");
         assert!(bytes.contains(&13));
 
-        // But in a board title, that same byte is a wingding
+        // But in a board title, that same byte is a dingbat
         assert_debug_snapshot!(decode_oneline(&bytes), @r#""ABC♪DEF""#);
     }
 
