@@ -1,7 +1,10 @@
 [package]
 name = "mzp-peg-macro"
+description = "Internal crate for generating Marzipan's PEG parser code"
 version = "0.1.0"
 edition = "2024"
+license = "MIT"
+repository = "https://github.com/cmounce/marzipan"
 
 [lib]
 proc-macro = true

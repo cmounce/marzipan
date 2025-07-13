@@ -1,7 +1,10 @@
 [package]
 name = "marzipan"
+description = "A macro processor for ZZT worlds"
 version = "0.1.0"
 edition = "2024"
+license = "MIT"
+repository = "https://github.com/cmounce/marzipan"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
