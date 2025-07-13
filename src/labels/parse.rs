@@ -121,7 +121,7 @@ pub fn parse_stat_labels(stat: &Stat, ctx: &Context) -> ParsedStat {
 }
 
 mod grammar {
-    use peg_macro::grammar;
+    use mzp_peg_macro::grammar;
 
     grammar! {
         program = (line ("\n" line)*)? EOI;

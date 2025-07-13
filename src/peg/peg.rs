@@ -207,7 +207,7 @@ impl<'a, T: Clone> Capture<'a, T> {
 #[cfg(test)]
 mod tests {
     use insta::assert_debug_snapshot;
-    use peg_macro::grammar;
+    use mzp_peg_macro::grammar;
 
     use super::ParseState;
 

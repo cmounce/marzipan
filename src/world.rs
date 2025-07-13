@@ -128,8 +128,7 @@ pub struct Stat {
 impl World {
     pub fn from_bytes(bytes: &[u8]) -> Result<World, LoadError> {
         let (input, (_, num_boards)) = (tag(&[0xff, 0xff][..]), le_i16).parse(bytes)?;
-        let (input, (ammo, gems, keys)) =
-            (le_i16, le_i16, count(bool_u8, 7)).parse(input)?;
+        let (input, (ammo, gems, keys)) = (le_i16, le_i16, count(bool_u8, 7)).parse(input)?;
         let (input, (health, starting_board, torches, torch_cycles, energizer_cycles)) =
             (le_i16, le_i16, le_i16, le_i16, le_i16).parse(input)?;
         let (input, (_, score, world_name)) = (take(2usize), le_i16, pstring(20)).parse(input)?;
