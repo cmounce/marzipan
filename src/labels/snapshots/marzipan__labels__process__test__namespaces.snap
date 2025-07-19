@@ -22,13 +22,13 @@ expression: board_to_text(board)
 'Make sure locals exist in separate namespaces
 :do_stuff
 #lock
-:_loop
+:loop
 '
-:_do_stuff
-:_loop0
-/i#if blocked rndne _loop0
+:do_stuff_
+:loop_
+/i#if blocked rndne loop_
 '
-#take time 1 _break
-#_loop
-:_break
+#take time 1 break
+#loop
+:break
 #unlock

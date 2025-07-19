@@ -6,70 +6,70 @@ expression: board_to_text(board)
 'using the same local label ".loop"
 :run_w
 #walk w
-:_loop
+:loop
 #try w stop
-#_loop
+#loop
 '
 :run_e
 #walk e
-:_loop0
+:loop_
 #try e stop
-#_loop0
+#loop_
 '
 :stop
 #walk i
 ---
 'Using locals before any globals are defined
-:_loop1
-#take gems 1 _break
-#_loop1
-:_break
+:loopa
+#take gems 1 break
+#loopa
+:break
 ---
 'Multiple sections with the same name
 #end
 :touch
 Trying to sell you some ammo...
-#take gems 10 _skip
+#take gems 10 skip
 #give ammo 10
-:_skip
+:skip
 #zap touch
 #end
 :touch
 Trying to sell you some torches...
-#take gems 15 _skip0
+#take gems 15 skip_
 #give torches 5
-:_skip0
+:skip_
 #restore touch
 ---
 'Multiple locals with the same name
 #end
-:repeat3
-:_z
-:_z
-:_z
-#take gems 1 _skip1
+:repeat_
+:z
+:z
+:z
+#take gems 1 skipa
 #give score 1
-:_skip1
-#zap _z
-#_z
-:_z
+:skipa
+#zap z
+#z
+:z
 ---
 'Addressing labels with section.local
 :touch
-:_foo
+:foo
 #end
 :touch
-:_foo0
+:foo_
 #end
 :shot
 'sends to the first one:
-#_foo
+#foo
 ---
 @alice
 :shared
 'this is the 1st section named "shared"
 'but its local should correspond with @bob's 2nd "shared"
-:_local
+:local
 #end
 :shared
 ---
@@ -79,4 +79,4 @@ Trying to sell you some torches...
 :shared
 'this is the 2nd section named "shared"
 'but its local should correspond with @alice's 1st "shared"
-:_local
+:local

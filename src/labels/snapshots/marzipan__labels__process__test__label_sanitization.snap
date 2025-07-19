@@ -9,14 +9,14 @@ expression: board_to_text(board)
 You have hundreds of gems.
 #end
 :lt_
-#take gems 10 lt_0
+#take gems 10 lt__
 #give gems 10
 You have tens of gems.
 #end
-:lt_0
-#take gems 1 lt1
+:lt__
+#take gems 1 lt_a
 #give gems 1
 You have at least one gem.
 #end
-:lt1
+:lt_a
 You don't have any gems!

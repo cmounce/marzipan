@@ -1,187 +1,151 @@
-use std::collections::{HashMap, HashSet};
-
 use compact_str::CompactString;
+use rustc_hash::{FxHashMap, FxHashSet};
 
-#[derive(PartialEq, Eq, Hash)]
-struct LabelId(CompactString);
+pub struct Registry {
+    key_to_suffix: FxHashMap<Lowercase, Suffix>,
+    names: FxHashSet<Lowercase>,
+    anonymous_counter: CompactString,
+}
 
-impl LabelId {
-    fn new(label: &str) -> Self {
-        let mut result = CompactString::new(label);
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct Lowercase(CompactString);
+
+impl Lowercase {
+    fn new(key: &str) -> Self {
+        let mut result = CompactString::new(key);
         result.make_ascii_lowercase();
         Self(result)
     }
 }
 
-pub struct Registry {
-    label_transforms: HashMap<LabelId, Transform>,
-    existing: HashSet<CompactString>,
-    anonymous_counter: CompactString,
-}
+#[derive(Default)]
+struct Suffix(CompactString);
 
-enum Transform {
-    Preferred,
-    FilteredWithSuffix(CompactString),
-}
-
-impl Transform {
-    fn apply(&self, label: &str) -> CompactString {
-        let preferred = preferred_label_name(label);
-        match self {
-            Transform::Preferred => preferred,
-            Transform::FilteredWithSuffix(suffix) => {
-                let mut result = preferred;
-                result = Registry::filter_label_chars(&result);
-                result.push_str(&suffix);
-                result
-            }
-        }
+impl Suffix {
+    fn apply(&self, key: &str) -> CompactString {
+        let mut result = preferred_label_name(key);
+        result.push_str(&self.0);
+        result
     }
 }
 
 impl Registry {
     pub fn new() -> Self {
         let builtin_labels = ["bombed", "energize", "shot", "thud", "touch"];
-        let mut label_transforms = HashMap::new();
-        let mut existing = HashSet::new();
+        let mut key_to_suffix = FxHashMap::default();
+        let mut taken = FxHashSet::default();
         for name in builtin_labels {
-            let cs = CompactString::new(name);
-            label_transforms.insert(LabelId(cs.clone()), Transform::Preferred);
-            existing.insert(cs);
+            let name = Lowercase(name.into());
+            key_to_suffix.insert(name.clone(), Suffix::default());
+            taken.insert(name);
         }
         Self {
-            label_transforms,
-            existing,
-            anonymous_counter: "_".into(),
+            key_to_suffix,
+            names: taken,
+            anonymous_counter: CompactString::const_new(""),
         }
     }
 
-    pub fn sanitize(&mut self, label: &str) -> CompactString {
+    pub fn sanitize(&mut self, key: &str) -> CompactString {
         // Use existing sanitization if one exists
-        let id = LabelId::new(label);
-        if let Some(transform) = self.label_transforms.get(&id) {
-            return transform.apply(label);
+        let key_lower = Lowercase::new(key);
+        if let Some(transform) = self.key_to_suffix.get(&key_lower) {
+            return transform.apply(key);
         }
 
-        // Try to use label's preferred name as-is
-        let preferred = Transform::Preferred.apply(label);
-        if Registry::is_valid_label(&preferred) {
-            let key = preferred.to_ascii_lowercase();
-            if !self.existing.contains(&key) {
-                self.label_transforms.insert(id, Transform::Preferred);
-                self.existing.insert(key);
-                return preferred;
-            }
-        }
-
-        // Generate a new name by appending suffixes
-        let base = Registry::filter_label_chars(&preferred);
-        let base_len = base.len();
-        let mut candidate = base;
-        let mut suffix = CompactString::with_capacity(0);
+        // Append suffixes until we find a name that's not taken yet
+        let mut candidate = Lowercase::new(&preferred_label_name(key));
+        let mut suffix = CompactString::const_new("");
+        let original_len = candidate.0.len();
         loop {
-            candidate.push_str(&suffix);
-            let key = candidate.to_ascii_lowercase();
-            if !self.existing.contains(&key) {
-                self.label_transforms
-                    .insert(id, Transform::FilteredWithSuffix(suffix));
-                self.existing.insert(key);
+            candidate.0.push_str(&suffix);
+            if !self.names.contains(&candidate) {
+                self.key_to_suffix.insert(key_lower, Suffix(suffix));
+                self.names.insert(candidate.clone());
                 break;
             } else {
-                candidate.truncate(base_len);
+                candidate.0.truncate(original_len);
                 increment(&mut suffix);
             }
         }
-        candidate
+        candidate.0
     }
 
     pub fn gen_anonymous(&mut self) -> CompactString {
-        while self.existing.contains(&self.anonymous_counter) {
+        increment(&mut self.anonymous_counter);
+        while self
+            .names
+            .contains(&Lowercase(self.anonymous_counter.clone()))
+        {
             increment(&mut self.anonymous_counter);
         }
-        let result = self.anonymous_counter.clone();
-        increment(&mut self.anonymous_counter);
-        result
-    }
-
-    fn is_valid_label(s: &CompactString) -> bool {
-        if s.len() == 0 {
-            return false;
-        }
-        let (most, last) = s.split_at(s.len() - 1);
-        if !most.chars().all(|c| c == '_' || c.is_ascii_alphabetic()) {
-            return false;
-        }
-        last.chars().all(|c| c == '_' || c.is_ascii_alphanumeric())
-    }
-
-    fn filter_label_chars(s: &CompactString) -> CompactString {
-        let mut result = CompactString::with_capacity(0);
-        let mut run_of_digits = false;
-        for c in s.chars() {
-            if c.is_ascii_digit() {
-                if !run_of_digits {
-                    result.push('_');
-                    run_of_digits = true;
-                }
-            } else {
-                result.push(c);
-                run_of_digits = false;
-            }
-        }
-        result
+        self.anonymous_counter.clone()
     }
 }
 
-/// Given an unsanitized full name, generate the first-pick name we'd like to
-/// assign this label. (Results returned by this function are subject to veto
-/// if they are invalid or already taken.)
-fn preferred_label_name(s: &str) -> CompactString {
-    if let Some((_, suffix)) = s.rsplit_once(|c: char| !c.is_ascii_alphanumeric() && c != '_') {
-        // Prevent namespaces and local labels from starting with a digit.
-        // This ensures stuff like `#take gems 100.99orless` won't compile
-        // to `#take gems 10099orless` (would parse incorrectly).
-        let mut result = CompactString::const_new("_");
-        result.push_str(suffix);
-        result
-    } else {
-        CompactString::new(s)
+/// Given the key string identifying a label, generate the first-pick name we'd
+/// like to assign it. (Results returned by this function are subject to veto if
+/// they are already taken.)
+fn preferred_label_name(key: &str) -> CompactString {
+    // Extract the last part of the key: "ns~global$123.local" becomes "local"
+    let base_name = key
+        .rsplit_once(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+        .map(|(_, base_name)| base_name)
+        .unwrap_or(key);
+
+    // Collapse runs of numeric digits/underscores to a single underscore
+    let mut result = CompactString::default();
+    let mut run = false;
+    for c in base_name.chars() {
+        if c.is_ascii_alphabetic() {
+            result.push(c);
+            run = false;
+        } else if !run {
+            result.push('_');
+            run = true;
+        }
     }
+    result
 }
 
 /// Increments a string through label-safe characters.
-/// Characters loop through underscore and the letters a-z.
-/// Additionally, the final character is allowed to loop through 0-9.
+///
+/// The characters tick upward in order (underscore, a-z), odometer style,
+/// growing the string on overflow. The result is similar to counting in
+/// base 27, but it's not quite the same:
+///
+/// - The zeroth value is the empty string "" (not "_").
+/// - "z" is followed by "__", "_a", "_b", etc (not "a_", "aa", "ab").
+///
+/// Unlike in place-value systems where "0001" and "1" are equivalent, the goal
+/// of this function is to generate every possible string.
 fn increment(s: &mut CompactString) {
     let original_len = s.len();
 
     // Find a character we can increment without carry
     let mut last_char = s.pop();
-    while !(last_char == None || last_char != Some('z')) {
+    while last_char == Some('z') {
         last_char = s.pop();
     }
 
     if let Some(c) = last_char {
-        // Increment character in order: 0-9, then _, then a-z
+        // Increment character
         let incremented = match c {
-            '0'..'9' | 'a'..'z' => (c as u8 + 1) as char,
-            '9' => '_',
+            'a'..'z' => (c as u8 + 1) as char,
             '_' => 'a',
             _ => unreachable!(),
         };
         s.push(incremented);
 
-        // Pad to original length, like "___0"
+        // Pad to original length
         while s.len() < original_len {
-            let is_last = s.len() == original_len - 1;
-            s.push(if is_last { '0' } else { '_' });
-        }
-    } else {
-        // We reached maximum value for the string: everything rolls over
-        for _ in 0..original_len {
             s.push('_');
         }
-        s.push('0');
+    } else {
+        // All existing chars roll over, length grows by 1
+        for _ in 0..(original_len + 1) {
+            s.push('_');
+        }
     }
 }
 
@@ -210,29 +174,26 @@ mod test {
         }
         let result = rows.join("\n");
         assert_snapshot!(result, @r"
-        0, 1, 2, 3, 4, 5, 6, 7, 8, 9
         _, a, b, c, d, e, f, g, h, i
         j, k, l, m, n, o, p, q, r, s
-        t, u, v, w, x, y, z, _0, _1, _2
-        _3, _4, _5, _6, _7, _8, _9, __, _a, _b
+        t, u, v, w, x, y, z, __, _a, _b
         _c, _d, _e, _f, _g, _h, _i, _j, _k, _l
         _m, _n, _o, _p, _q, _r, _s, _t, _u, _v
-        _w, _x, _y, _z, a0, a1, a2, a3, a4, a5
-        a6, a7, a8, a9, a_, aa, ab, ac, ad, ae
+        _w, _x, _y, _z, a_, aa, ab, ac, ad, ae
         af, ag, ah, ai, aj, ak, al, am, an, ao
+        ap, aq, ar, as, at, au, av, aw, ax, ay
+        az, b_, ba, bb, bc, bd, be, bf, bg, bh
+        bi, bj, bk, bl, bm, bn, bo, bp, bq, br
         ");
     }
 
     #[test]
     fn test_increment_all_len_3() {
-        // Most chars are alphabetic or underscore (26 + 1 = 27).
-        // Last char can include digits (27 + 10 = 37).
-        let num_labels = 37 + 27 * 37 + 27 * 27 * 37; // 1 char + 2 chars + 3 chars
+        let num_labels = 27 + 27 * 27 + 27 * 27 * 27; // 1 char + 2 chars + 3 chars
         let mut ctr = CompactString::new("");
         let mut seen = HashSet::with_capacity(num_labels);
         for _ in 0..num_labels {
             increment(&mut ctr);
-            assert!(Registry::is_valid_label(&ctr));
             assert!(!seen.contains(&ctr));
             assert!(ctr.len() <= 3);
             seen.insert(ctr.clone());
@@ -273,20 +234,20 @@ mod test {
         let result = results.join("\n");
         assert_snapshot!(result, @r#"
         "foo" => foo
-        "ns1~foo" => _foo
-        "ns2~foo" => _foo0
-        "foo.thisloop" => _thisloop
-        "foo.thatloop" => _thatloop
-        "bar.thisloop" => _thisloop0
-        "bar.thatloop" => _thatloop0
-        "foo$1.thisloop" => _thisloop1
-        "foo$1.thatloop" => _thatloop1
-        "bar1" => bar1
-        "bar2" => bar2
-        "bar123" => bar_
-        "BAR123" => BAR_
-        "bar456" => bar_0
-        "BAR456" => BAR_0
+        "ns1~foo" => foo_
+        "ns2~foo" => fooa
+        "foo.thisloop" => thisloop
+        "foo.thatloop" => thatloop
+        "bar.thisloop" => thisloop_
+        "bar.thatloop" => thatloop_
+        "foo$1.thisloop" => thisloopa
+        "foo$1.thatloop" => thatloopa
+        "bar1" => bar_
+        "bar2" => bar__
+        "bar123" => bar_a
+        "BAR123" => BAR_a
+        "bar456" => bar_b
+        "BAR456" => BAR_b
         "foo2bar" => foo_bar
         "#);
     }
