@@ -21,7 +21,7 @@ Here's an example of what anonymous labels look like in practice:
 #if key @f              'Jump to anonymous label. Marzipan compiles `@f` to `_`...
 The chest is locked.
 #end
-:@                      '...and this compiles to `:_`.
+:@                      '...and compiles this to `:_`.
 You unlock the chest.
 There's a bunch of gems inside!
 #give gems 20
@@ -31,7 +31,7 @@ There's a bunch of gems inside!
 #if shotgun @f          'This time, Marzipan compiles `@f` to `a`...
 Nothing happens.
 #end
-:@                      '...and this compiles to `:a`.
+:@                      '...and compiles this to `:a`.
 The chest shatters!
 Gems fly everywhere.
 #put w green gem
